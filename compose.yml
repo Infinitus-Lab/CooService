@@ -76,6 +76,9 @@ services:
       BIND: ":8082"
       # 验证通过后转发给同一网络里的 caddy
       TARGET: "http://caddy:80"
+      # 本地直连：以连接源地址为客户端 IP（无外部反代注入 X-Real-Ip）。
+      # 日后经云端反代（cloudflared）则去掉此项，由反代注入 X-Real-Ip
+      USE_REMOTE_ADDRESS: "true"
       # 可调参数（默认 difficulty=4）：DIFFICULTY: "4"
     healthcheck:
       test: ["CMD", "anubis", "--healthcheck"]
@@ -83,9 +86,10 @@ services:
       timeout: 30s
       retries: 5
       start_period: 500ms
-    # 暂不发布端口：客户端 IP 来源（X-Real-Ip）待 cloudflared 方案落地后恢复
-    #   ports: ["127.0.0.1:8082:8082"]
-    #   并去掉下面 caddy 的临时端口，恢复 浏览器 → anubis → caddy 链路
+    # 浏览器入口：PoW 挑战后转发 caddy（TARGET）。本地直连时容器见到的
+    # 源 IP 即客户端 IP；日后经云端反代（cloudflared）时由反代注入 X-Real-Ip
+    ports:
+      - "127.0.0.1:8082:8082"
     networks:
       - coo-web
 
@@ -98,9 +102,7 @@ services:
         # 构建期注入 API 域名；默认指本地 8081，生产请改成实际域名
         VITE_BASE_API: ${VITE_BASE_API:-http://127.0.0.1:8081}
     restart: unless-stopped
-    ports:
-      # 临时直出（anubis 暂未接 IP 来源）；正式链路恢复后删除此端口
-      - "127.0.0.1:8082:80"
+    # 无对外端口：只被 coo-web 内网的 anubis 转发访问（TARGET: http://caddy:80）
     networks:
       - coo-web
 
