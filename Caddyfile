@@ -1,0 +1,9 @@
+# Caddy 只托管 WebUI 静态文件（anubis 验证通过后的源站）。
+# API 不在本机反代：api 区（coo-api 网络）与 web 区完全隔离，
+# WebUI 通过构建期 VITE_BASE_API 直连 API 域名。
+
+:80 {
+    root * /usr/share/caddy
+    try_files {path} /index.html
+    file_server
+}

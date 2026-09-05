@@ -1,0 +1,89 @@
+@import 'tailwindcss';
+/* 常规配色：浅色为默认，深色跟随系统 prefers-color-scheme，都不作改动 */
+@plugin 'daisyui' {
+  themes: light --default, dark --prefersdark;
+}
+
+html,
+body {
+  background: var(--color-base-200);
+  color: var(--color-base-content);
+}
+
+/* 眉题：英文小标签，等宽 + 加宽字距，做栏目标题 */
+.eyebrow {
+  font-family: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--color-base-content);
+  opacity: 0.55;
+}
+
+/* 签名元素：哈希指纹。身份即 sha256，悬停高亮、点击复制 */
+.hash-chip {
+  font-family: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, monospace;
+  font-size: 0.75rem;
+  line-height: 1.4;
+  padding: 0.1rem 0.45rem;
+  border-radius: 0.25rem;
+  border: 1px solid var(--color-base-300);
+  background: var(--color-base-300);
+  color: var(--color-base-content);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.hash-chip:hover {
+  border-color: var(--color-primary);
+  color: var(--color-primary);
+}
+.hash-chip.copied {
+  border-color: var(--color-success);
+  color: var(--color-success);
+}
+
+/* 台账表：表头做眉题式小标签，不再用斑马纹 */
+.table thead th {
+  font-family: ui-monospace, 'Cascadia Mono', 'SF Mono', Consolas, monospace;
+  font-size: 0.6875rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  opacity: 0.6;
+}
+.table :where(tbody tr) {
+  border-bottom: 1px solid color-mix(in oklab, var(--color-base-300) 55%, transparent);
+}
+
+/* 表单控件：面板是 base-100，输入框落在 base-300 上保证明暗两种主题下都有形体 */
+@utility input {
+  @apply border-base-content/30 bg-base-300;
+}
+@utility select {
+  @apply border-base-content/30 bg-base-300;
+}
+@utility textarea {
+  @apply border-base-content/30 bg-base-300;
+}
+
+.input:focus-visible,
+.select:focus-visible,
+.textarea:focus-visible {
+  border-color: var(--color-primary);
+  outline: none;
+}
+.input::placeholder,
+.textarea::placeholder {
+  opacity: 0.45;
+}
+
+/* 原生日历图标的可见性（主题自带对应明暗自适应） */
+input[type='datetime-local']::-webkit-calendar-picker-indicator,
+input[type='date']::-webkit-calendar-picker-indicator {
+  opacity: 0.65;
+  cursor: pointer;
+}
+
+/* 选项行（勾选框/开关）：独立盒子，和上下表单元素拉开，不贴在一起 */
+@utility option-row {
+  @apply mt-2 flex cursor-pointer items-center gap-2 rounded-field border border-base-content/15 bg-base-200 px-3 py-2 text-sm;
+}

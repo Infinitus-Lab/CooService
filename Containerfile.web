@@ -1,0 +1,19 @@
+# WebUI 两段构建：node 编出静态文件，caddy 只托管静态（不反代 API）。
+# VITE_BASE_API 构建期注入 API 域名（如 https://api.example.com），
+# 不传则构建成同源（仅本地 vite dev 场景用）。
+
+FROM docker.io/library/node:24-alpine AS build
+WORKDIR /web
+# pnpm 是核心包管理器，全局装一个保证锁文件版本匹配
+RUN npm install -g pnpm@10
+# 先只复制依赖清单，锁文件不变时走缓存
+COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
+RUN pnpm install --frozen-lockfile
+COPY web/ ./
+ARG VITE_BASE_API=
+ENV VITE_BASE_API=$VITE_BASE_API
+RUN pnpm build
+
+FROM docker.io/library/caddy:2
+COPY --from=build /web/dist /usr/share/caddy
+COPY Caddyfile /etc/caddy/Caddyfile

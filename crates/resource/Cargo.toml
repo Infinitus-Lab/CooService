@@ -1,0 +1,16 @@
+[package]
+name = "resource"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+dashmap = { workspace = true }
+tokio = { workspace = true }
+tokio-util = { workspace = true }
+futures-util = { workspace = true }
+async-trait = { workspace = true }
+rust-s3 = { workspace = true }
+suppaftp = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+chrono = { workspace = true }

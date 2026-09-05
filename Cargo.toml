@@ -1,0 +1,38 @@
+[workspace]
+resolver = "3"
+members = ["crates/apps", "crates/resource", "crates/router", "crates/database"]
+
+[workspace.dependencies]
+chrono = { version = "0.4.45", features = ["serde"]}
+dashmap = { version = "6.2.1", features = ["serde"] }
+serde = { version = "1.0.229", features = ["derive"] }
+serde_json = "1.0.151"
+toml = "1.1.5"
+tokio = { version = "1.53.1", features = ["full"] }
+url = { version = "2.5.8", features = ["serde"] }
+tracing = "0.1.44"
+tracing-subscriber = { version = "0.3.23", features = ["env-filter"] }
+anyhow = "1.0.104"
+thiserror = "2.0.20"
+axum = "0.8.9"
+tower = "0.5.3"
+tower-http = { version = "0.6.11", features = ["trace", "cors", "timeout"] }
+
+# Database
+tokio-postgres = { version = "0.7.18", features = ["with-uuid-1", "with-serde_json-1", "with-chrono-0_4"] }
+deadpool-postgres = "0.14.2"
+uuid = { version = "1.26.0", features = ["serde", "v4"] }
+rand = "0.10.2"
+
+# Remote storage
+rust-s3 = "0.37.2"
+suppaftp = { version = "11.0.0", features = ["tokio"] }
+async-trait = "0.1.92"
+tokio-util = "0.7.19"
+futures-util = "0.3.31"
+sha2 = "0.10.9"
+
+# Internal crates
+apps = { path = "crates/apps" }
+resource = { path = "crates/resource" }
+database = { path = "crates/database" }

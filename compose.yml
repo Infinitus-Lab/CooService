@@ -1,0 +1,119 @@
+# podman-compose up -d --build      （或 docker compose up -d --build）
+#
+# 拓扑：
+#
+#   浏览器 ─ 8082 ─► anubis（人机验证）──► caddy（只托管 WebUI 静态文件）
+#                          coo-web 网络
+#
+#   游戏客户端 / 管理工具 / WebUI ─► coo-router 的 8081（coo-api 网络，直连）
+#
+# 网络：
+#   · coo-web（anubis + caddy）：internal，无出网
+#   · coo-api（pgsql + router）：internal，pgsql 不发布端口
+#   · coo-egress（仅 router）：出网到外部存储池终结点（S3/FTP 健康探测与同步 push）
+# WebUI 通过构建期 VITE_BASE_API 指向 API 域名（跨域由 router 的
+# permissive CORS 放行），API 域名在生产上由运维在外面挂 TLS / 反代。
+#
+# 注意：API 不走 anubis。anubis 的 PoW 挑战会挡掉非浏览器客户端，
+# 游戏客户端与管理接口直连 router 的 8081，这才是对外发布路径。
+
+services:
+  coo-pgsql:
+    container_name: coo-pgsql
+    image: docker.io/library/postgres:16-alpine
+    environment:
+      POSTGRES_USER: cooservice
+      POSTGRES_PASSWORD: coopass
+      POSTGRES_DB: cooservice
+    networks:
+      - coo-api
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U cooservice -d cooservice"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  coo-router:
+    container_name: coo-router
+    build:
+      context: .
+      dockerfile: Containerfile
+    depends_on:
+      coo-pgsql:
+        condition: service_healthy
+    environment:
+      RUST_LOG: info
+      BIND_ADDR: 0.0.0.0:8081
+      DATABASE_URL: postgresql://cooservice:coopass@coo-pgsql:5432/cooservice
+      MIGRATIONS_DIR: /migrations
+      LOCAL_RESOURCE_DIR: /data/resource
+    networks:
+      - coo-api
+      - coo-egress
+    ports:
+      # 对外 API 入口：游戏客户端 / 管理接口 / 资源下载都走这里（绕过 anubis）
+      - "127.0.0.1:8081:8081"
+    volumes:
+      # 本地完整副本：每个资源都有一份，是入池与同步推池的唯一推送源。
+      #
+      # :U 将宿主目录属主改为容器用户（65532）；:z（小写）打共享
+      # container_file_t 标签——不带私有 SELinux 类别，容器重建后仍可写
+      # （:Z 为单容器私有标签，重建即失效，禁止使用）。
+      # 宿主侧修改文件需经 podman unshare；若标签被 restorecon 重置，
+      # 重建容器即可重打标签。
+      - ./data/resource:/data/resource:U,z
+    restart: unless-stopped
+
+  anubis:
+    container_name: coo-anubis
+    image: ghcr.io/techarohq/anubis:latest
+    pull_policy: always
+    restart: unless-stopped
+    environment:
+      # anubis 在容器内监听 8082
+      BIND: ":8082"
+      # 验证通过后转发给同一网络里的 caddy
+      TARGET: "http://caddy:80"
+      # 可调参数（默认 difficulty=4）：DIFFICULTY: "4"
+    healthcheck:
+      test: ["CMD", "anubis", "--healthcheck"]
+      interval: 5s
+      timeout: 30s
+      retries: 5
+      start_period: 500ms
+    # 暂不发布端口：客户端 IP 来源（X-Real-Ip）待 cloudflared 方案落地后恢复
+    #   ports: ["127.0.0.1:8082:8082"]
+    #   并去掉下面 caddy 的临时端口，恢复 浏览器 → anubis → caddy 链路
+    networks:
+      - coo-web
+
+  caddy:
+    container_name: coo-caddy
+    build:
+      context: .
+      dockerfile: Containerfile.web
+      args:
+        # 构建期注入 API 域名；默认指本地 8081，生产请改成实际域名
+        VITE_BASE_API: ${VITE_BASE_API:-http://127.0.0.1:8081}
+    restart: unless-stopped
+    ports:
+      # 临时直出（anubis 暂未接 IP 来源）；正式链路恢复后删除此端口
+      - "127.0.0.1:8082:80"
+    networks:
+      - coo-web
+
+networks:
+  coo-web:
+    name: coo-web
+    internal: true
+  coo-api:
+    name: coo-api
+    internal: true
+  # 仅 router 加入：出网访问外部存储池终结点（S3/FTP）
+  coo-egress:
+    name: coo-egress
+
+volumes:
+  pgdata:
