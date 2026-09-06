@@ -6,7 +6,6 @@
 //! `encode(sha256, 'hex')` 生成的小写 key，大小写不归一会造成"库命中但文件 404、
 //! 删除留孤儿"。
 
-/// 校验失败：不是 64 位十六进制。
 #[derive(Debug, thiserror::Error)]
 #[error("invalid sha256 {0:?}, expected 64 hex chars")]
 pub struct InvalidSha256(pub String);

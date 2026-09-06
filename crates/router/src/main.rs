@@ -10,7 +10,10 @@ use router::{
     ratelimit::RateLimiter,
 };
 
-/// 管理密钥前 8 位指纹：日志里只出现指纹，不出现完整密钥。
+/// 公开接口缓存 TTL：几秒级，写操作最多延迟这么多时间可见。
+const PUBLIC_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(5);
+
+/// 管理密钥前 8 位指纹，日志里只出现指纹，不出现完整密钥。
 fn fingerprint(key: &str) -> &str {
     &key[..key.len().min(8)]
 }
@@ -51,7 +54,7 @@ async fn run() -> anyhow::Result<()> {
         config.pool_health_timeout,
     ));
     health.start(resources.clone());
-    // 池同步引擎需读 DB 的期望登记，按期放在 router 层
+    // 池同步引擎需读 DB 的期望登记，因此放在 router 层
     let sync = router::pool_sync::PoolSync::new(db.clone(), resources.clone(), local.clone());
     sync.spawn();
     // 清理上次被杀进程残留的 tmp 临时文件（上传中断会留下 UUID 文件）
@@ -62,12 +65,11 @@ async fn run() -> anyhow::Result<()> {
         tracing::warn!(error = %e, "cleanup stale tmp dir failed");
     }
     let admin_key = config.admin_key.clone();
-    let public_cache = Arc::new(PublicCache::new(std::time::Duration::from_secs(5)));
+    let public_cache = Arc::new(PublicCache::new(PUBLIC_CACHE_TTL));
     let rate_limiter = Arc::new(RateLimiter::new(
         config.public_rate_limit,
         config.trust_x_forwarded_for,
     ));
-    // 限流桶周期清扫：防 IPv6 轮换地址让桶表无限膨胀
     rate_limiter.spawn_cleaner();
     let state = AppState::new(
         apps,
@@ -87,7 +89,6 @@ async fn run() -> anyhow::Result<()> {
 
     let listener = tokio::net::TcpListener::bind(config.bind_addr).await?;
     tracing::info!(addr = %config.bind_addr, "listening");
-    // 只打前 8 位指纹用于区分实例；完整密钥必须走 ADMIN_KEY 环境变量
     tracing::info!(fingerprint = %fingerprint(&admin_key), "admin key fingerprint (X-Admin-Key)");
 
     axum::serve(
@@ -101,7 +102,6 @@ async fn run() -> anyhow::Result<()> {
     Ok(())
 }
 
-/// 日志级别取自 `RUST_LOG`，未设置时用下面的默认值。
 fn init_tracing() {
     let filter =
         std::env::var("RUST_LOG").unwrap_or_else(|_| "info,tower_http=debug,router=debug".into());

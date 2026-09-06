@@ -63,8 +63,8 @@ async fn fetch(
         ));
     };
 
-    // 归一化只给小写 sha;302 指向的分片路径必须再过 object_key（ab/cdef...），
-    // 直接用 sha 会丢一级分片前缀，池侧 404
+    // 302 指向池内对象：必须用分片 key（`ab/cdef...`）而不是裸 sha，池侧才找得到文件。
+    // sha 已在入口归一为小写，object_key 不会再出错
     let key = resource::key::object_key(&sha256).expect("normalized above");
 
     let redirect = {

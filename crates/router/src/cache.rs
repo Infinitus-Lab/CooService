@@ -1,7 +1,7 @@
 //! 公开端点的短 TTL 缓存。
 //!
 //! 客户端接口无认证、变化频率低（通道 / 公告都是人工维护），每次请求打 DB 是浪费；
-//! 缓存 TTL 几秒级，命中即省一次跨表聚合查询。
+//! TTL 几秒级，命中即省一次跨表聚合查询。缓存只做优化，无失效通知语义。
 
 use std::{
     sync::Arc,
@@ -10,6 +10,9 @@ use std::{
 
 use dashmap::DashMap;
 use serde_json::Value;
+
+/// 条目上限，超出时淘汰最旧一条（纯防御，正常规模远达不到）。
+const MAX_ENTRIES: usize = 1024;
 
 #[derive(Clone)]
 pub struct PublicCache {
@@ -42,8 +45,7 @@ impl PublicCache {
     }
 
     pub fn insert(&self, key: String, value: Value) {
-        // 放不下就清掉最旧的一个，缓存只是优化不是语义
-        if self.entries.len() >= 1024
+        if self.entries.len() >= MAX_ENTRIES
             && let Some(oldest) = self
                 .entries
                 .iter()

@@ -25,7 +25,7 @@ use uuid::Uuid;
 
 use crate::{ApiOk, ApiResult, AppError, auth::hex_encode, response::with_status, state::AppState};
 
-/// `RequestBodyLimitLayer` 读流中途触发上限时，错误链里会挂着 `LengthLimitError`。
+/// `RequestBodyLimitLayer` 超限时读流会报带 `LengthLimitError` 的错误链。
 fn is_length_limit_error(e: &std::io::Error) -> bool {
     use std::error::Error as _;
 
@@ -119,8 +119,7 @@ pub struct UploadedView {
 }
 
 /// 上传：临时文件（边写边算 sha256）→ 本地正式副本 → 入库。
-/// 只落本地；进池是资源池管理的事（`pools.rs`）。
-/// 路由装配在顶层（`crate::router`），挂请求体上限 + admin 鉴权，且豁免全局超时。
+/// 路由装配在顶层（`crate::router`）：挂请求体上限 + admin 鉴权，且豁免全局超时。
 pub async fn upload(
     State(state): State<AppState>,
     Query(params): Query<UploadParams>,

@@ -28,7 +28,6 @@ use resource::{
     pool::{RemotePool, ResourcePool},
 };
 
-/// 池同步状态：推送中 / 已收敛 / 扫描或推送出错。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum PoolSyncStatus {
     Syncing,
@@ -49,7 +48,6 @@ impl PoolSyncStatus {
 #[derive(Debug, Clone)]
 pub struct PoolSyncInfo {
     pub status: PoolSyncStatus,
-    /// 待补齐的推送操作数
     pub pending: usize,
     pub scanned_at: Option<DateTime<Utc>>,
     pub error: Option<String>,
@@ -125,14 +123,12 @@ impl PoolSync {
         self.states.get(pool_id).map(|entry| entry.value().clone())
     }
 
-    /// 池被删除后清掉同步状态与实有集。
     pub fn deregister(&self, pool_id: &str) {
         self.states.remove(pool_id);
         self.known.remove(pool_id);
     }
 
-    /// 全扫描重建各池实有集并补齐缺失（模型见模块头）。返回各池状态。
-    /// 并发安全：已有扫描在进行时直接返回空结果（跳过本轮），由调用方提示稍后查询状态。
+    /// 全扫描互斥：进行中的扫描被并发触发时直接跳过本轮（调用方轮询状态即可）。
     pub async fn full_scan(
         &self,
     ) -> Result<HashMap<String, PoolSyncInfo>, database::error::DatabaseError> {

@@ -49,7 +49,7 @@ pub struct AppState {
     pub sync: Arc<PoolSync>,
     /// 数据库连接池
     pub db: Database,
-    /// 管理接口密钥，每次启动随机生成
+    /// 管理密钥（`ADMIN_KEY` 注入或随机生成，见 `auth` 模块头）
     pub admin_key: Arc<str>,
     /// 上传请求体上限（字节），由路由装配层消费
     pub request_max_upload_bytes: u64,
@@ -60,7 +60,6 @@ pub struct AppState {
 }
 
 impl AppState {
-    /// 运行时句柄统一为 `Arc`，后台任务与请求共享同一注册表。
     #[allow(clippy::too_many_arguments)]
     pub fn new(
         apps: AppManager,

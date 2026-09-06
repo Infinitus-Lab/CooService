@@ -20,7 +20,7 @@ const HEX_TABLE: &[u8; 16] = b"0123456789abcdef";
 const PREFIX: &str = "enc:v1:";
 const NONCE_LEN: usize = 12;
 
-/// 32 字节 AES-256 主密钥，进程内共享的 `OnceLock`。
+/// 进程内只从环境变量解析一次主密钥（`OnceLock`），避免每次加解密都读 env。
 static MASTER_KEY: std::sync::OnceLock<Option<Key<Aes256Gcm>>> = std::sync::OnceLock::new();
 
 fn master_key() -> Option<&'static Key<Aes256Gcm>> {
@@ -65,7 +65,7 @@ pub fn encrypt_secret(plain: &str) -> String {
         .expect("os rng unavailable");
     let nonce = Nonce::from_slice(&nonce_bytes);
 
-    // 每次加密随机 nonce，同一明文每次密文不同；`secret` 从不参与查询，无影响。
+    // 随机 nonce：同一明文每次密文不同。`secret` 从不参与 WHERE 查询，非确定性无副作用。
     let ciphertext = cipher
         .encrypt(nonce, plain.as_bytes())
         .expect("aes-gcm encrypt with fixed-size key cannot fail");

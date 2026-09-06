@@ -21,7 +21,6 @@ use crate::{
     pool::{Entry, RemotePool},
 };
 
-/// 下载用 duplex 的缓冲大小
 const TRANSFER_BUFFER: usize = 64 * 1024;
 
 /// FTP 连接配置。
@@ -48,7 +47,7 @@ pub struct FtpPool {
 }
 
 impl FtpPool {
-    /// 建连、登录、切二进制模式，并校验一次根目录列表。
+    /// 建连、登录、切二进制，并校验一次根目录列表。
     pub async fn connect(config: FtpConfig) -> Result<Self, PoolError> {
         let mut stream = AsyncNativeTlsFtpStream::connect((config.host.as_str(), config.port)).await?;
         if config.secure {
@@ -69,7 +68,6 @@ impl FtpPool {
         Ok(pool)
     }
 
-    /// 所有路径都相对池根，拼接成绝对路径再交给 FTP。
     fn full_path(&self, path: &str) -> String {
         let root = self.root.trim_matches('/');
         let path = path.trim_matches('/');
@@ -185,7 +183,6 @@ impl FtpPool {
     }
 }
 
-/// 把列表里拼出的绝对路径还原成相对池根的路径
 fn trim_root(path: &str) -> String {
     path.trim_start_matches('/').to_string()
 }

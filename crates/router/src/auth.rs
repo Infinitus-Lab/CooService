@@ -47,8 +47,7 @@ pub async fn require_admin_key(
     }
 }
 
-/// 定长比较：长度差异与逐字节差异都折进同一个累计值，比较耗时与内容无关，
-/// 不因首字节不同就提前返回（响应时间无法泄露任何比特信息）。
+/// 常时比较：长度差异折进累计值，比较耗时与内容无关（防响应时间泄露字节信息）。
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
     let mut diff = left.len() ^ right.len();
     let max = left.len().max(right.len());

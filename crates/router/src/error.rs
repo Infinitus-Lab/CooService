@@ -59,7 +59,6 @@ impl From<database::DatabaseError> for AppError {
     }
 }
 
-/// 领域层错误 → HTTP 错误：数据库故障归 500，其余按语义映射。
 impl From<apps::error::AppError> for AppError {
     fn from(e: apps::error::AppError) -> Self {
         use apps::error::AppError as Domain;

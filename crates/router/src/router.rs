@@ -42,8 +42,7 @@ pub fn build_router(
 ) -> Router {
     let cors = cors_layer(&cors_allowed_origins);
 
-    // 常规树：/api/v1（app 公开接口 + admin 管理接口 + 资源下载）。
-    // 限流只挂公开子树（无认证的 DB 防护），admin 子树是密钥门，不需要。
+    // 限流只挂公开子树（无认证的 DB 防护）；admin 子树有密钥门，不需要
     let public = routes::app::router()
         .merge(routes::resources::router())
         .route_layer(middleware::from_fn_with_state(

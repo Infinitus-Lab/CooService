@@ -61,7 +61,6 @@ impl ServerConfig {
             .ok()
             .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
 
-        // 管理密钥：显式注入优先，未注入则随机生成（主密钥不可从日志取回）
         let admin_key = match env::var("ADMIN_KEY").ok().filter(|s| !s.is_empty()) {
             Some(key) => key,
             None => {
@@ -105,7 +104,7 @@ impl Default for ServerConfig {
             max_upload_bytes: DEFAULT_MAX_UPLOAD_BYTES,
             public_rate_limit: DEFAULT_PUBLIC_RATE_LIMIT,
             trust_x_forwarded_for: false,
-            admin_key: hex_encode(&[0u8; 64]), // Only used in tests where auth isn't exercised
+            admin_key: hex_encode(&[0u8; 64]), // 仅供测试构造；真实密钥走 ADMIN_KEY 或随机生成
             cors_allowed_origins: Vec::new(),
         }
     }
