@@ -1,7 +1,22 @@
 @import 'tailwindcss';
-/* 常规配色：浅色为默认，深色跟随系统 prefers-color-scheme，都不作改动 */
+/* 主题：浅色默认，深色跟随系统 prefers-color-scheme（不写死 data-theme） */
 @plugin 'daisyui' {
   themes: light --default, dark --prefersdark;
+}
+
+/* 强调色改为墨绿：覆盖内置 light/dark 的 primary（其余颜色继承内置主题） */
+@plugin 'daisyui/theme' {
+  name: 'light';
+  default: true;
+  --color-primary: oklch(50% 0.115 163);
+  --color-primary-content: oklch(98% 0.01 163);
+}
+
+@plugin 'daisyui/theme' {
+  name: 'dark';
+  prefersdark: true;
+  --color-primary: oklch(72% 0.13 160);
+  --color-primary-content: oklch(17% 0.06 160);
 }
 
 html,

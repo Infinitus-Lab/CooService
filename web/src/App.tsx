@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
-import { ApiError, BASE_API, createClient } from './api/client';
+import { createClient } from './api/client';
 import type { AppView } from './api/types';
+import ApiSetupDialog from './components/ApiSetupDialog';
 import AnnouncesPage from './pages/AnnouncesPage';
 import AppDetailPage from './pages/AppDetailPage';
 import AppsPage from './pages/AppsPage';
@@ -10,26 +11,42 @@ import ResourcesPage from './pages/ResourcesPage';
 type Tab = 'apps' | 'pools' | 'resources' | 'announces';
 
 const KEY_STORAGE = 'coo.admin_key';
+const BASE_STORAGE = 'coo.api_base';
 
 export default function App() {
   const [adminKey, setAdminKey] = useState(() => sessionStorage.getItem(KEY_STORAGE) ?? '');
+  const [baseApi, setBaseApi] = useState(() => sessionStorage.getItem(BASE_STORAGE) ?? '');
   const [gateOpen, setGateOpen] = useState(false);
+  const [gateFocus, setGateFocus] = useState<'base' | 'key'>('base');
   const [tab, setTab] = useState<Tab>('apps');
   const [appOpen, setAppOpen] = useState<AppView | null>(null);
 
-  // 首页不是登录页：直接渲染业务页，任何管理接口 401 才弹密钥门
+  // 首页不是登录页：直接渲染业务页，地址不可达或管理接口 401 才弹 API 设置框
   const client = useMemo(
-    () => createClient(() => adminKey, () => setGateOpen(true)),
-    [adminKey],
+    () =>
+      createClient(
+        baseApi,
+        () => adminKey,
+        () => {
+          setGateFocus('key');
+          setGateOpen(true);
+        },
+        () => {
+          setGateFocus('base');
+          setGateOpen(true);
+        },
+      ),
+    [baseApi, adminKey],
   );
 
-  async function verify(key: string): Promise<unknown> {
-    const probe = createClient(() => key, () => {});
-    const result = await probe.listApps();
+  async function verify(base: string, key: string): Promise<void> {
+    const probe = createClient(base, () => key, () => {}, () => {});
+    await probe.listApps();
+    sessionStorage.setItem(BASE_STORAGE, base);
     sessionStorage.setItem(KEY_STORAGE, key);
+    setBaseApi(base);
     setAdminKey(key);
     setGateOpen(false);
-    return result;
   }
 
   function disconnect() {
@@ -90,13 +107,22 @@ export default function App() {
         </div>
 
         <div className="navbar-end">
-          <span className="font-mono text-xs opacity-50">{BASE_API || '同源'}</span>
+          <span className="font-mono text-xs opacity-50">{baseApi || '同源'}</span>
           <span
             className={`badge badge-soft font-mono ${adminKey ? 'badge-success' : 'badge-warning'}`}
             title={adminKey ? '管理密钥已配置' : '未配置：触发管理请求时将要求输入密钥'}
           >
             {adminKey ? `密钥 ${adminKey.slice(0, 8)}…` : '未配置密钥'}
           </span>
+          <button
+            className="btn btn-ghost btn-sm"
+            onClick={() => {
+              setGateFocus(baseApi ? 'key' : 'base');
+              setGateOpen(true);
+            }}
+          >
+            设置
+          </button>
           <button className="btn btn-ghost btn-sm" onClick={disconnect}>
             断开
           </button>
@@ -117,70 +143,18 @@ export default function App() {
       </div>
 
       <footer className="footer footer-center text-base-content/50 p-4 text-xs">
-        CooService 管理台 · 管理密钥仅保存在当前标签页（sessionStorage），接口返回 401 时将重新要求密钥
+        CooService 管理台 · API 地址与管理密钥仅保存在当前标签页（sessionStorage），地址不可达或接口返回
+        401 时将要求重新配置
       </footer>
 
-      {gateOpen && <KeyGate onSubmit={verify} />}
-    </div>
-  );
-}
-
-function KeyGate({ onSubmit }: { onSubmit: (key: string) => Promise<unknown> }) {
-  const [draft, setDraft] = useState('');
-  const [checking, setChecking] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-
-  async function submit() {
-    setChecking(true);
-    setError(null);
-    try {
-      await onSubmit(draft.trim());
-    } catch (e) {
-      setError(
-        e instanceof ApiError && e.code === 401
-          ? '密钥无效，请确认与 ADMIN_KEY 环境变量一致'
-          : e instanceof ApiError
-            ? e.message
-            : `连不上服务（${BASE_API || '同源'}）`,
-      );
-    } finally {
-      setChecking(false);
-    }
-  }
-
-  return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center bg-base-200 p-4">
-      <div className="w-full max-w-md border border-base-300 bg-base-100 p-6">
-        <div className="mb-1 flex items-baseline justify-between">
-          <span className="font-mono text-sm font-bold tracking-[0.22em]">
-            COOSERVICE · KEYGATE
-          </span>
-          <span className="text-base-content/50 text-xs">X-Admin-Key</span>
-        </div>
-        <p className="mb-4 text-sm opacity-60">
-          管理密钥由运维通过 ADMIN_KEY 环境变量注入；粘贴后本页接口将自动恢复
-        </p>
-        <input
-          type="password"
-          autoFocus
-          className="input w-full font-mono text-sm"
-          placeholder="粘贴 ADMIN_KEY 密钥"
-          value={draft}
-          onChange={(e) => setDraft(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !checking && draft.trim() !== '') void submit();
-          }}
+      {gateOpen && (
+        <ApiSetupDialog
+          initialBase={baseApi}
+          initialKey={adminKey}
+          focus={gateFocus}
+          onSubmit={verify}
         />
-        {error && <p className="text-error mt-2 text-xs">{error}</p>}
-        <button
-          className="btn btn-primary mt-4 w-full"
-          disabled={draft.trim() === '' || checking}
-          onClick={() => void submit()}
-        >
-          {checking ? <span className="loading loading-spinner loading-sm" /> : null}
-          {checking ? '验证中…' : '进入'}
-        </button>
-      </div>
+      )}
     </div>
   );
 }

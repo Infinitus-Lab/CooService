@@ -107,7 +107,7 @@ http/https URL（`routes/admin/pools.rs` 校验）。FTP `secure: true` 走显�
 - 管理接口：`/api/v1/admin` 整树 `X-Admin-Key`。密钥来源：`ADMIN_KEY` 环境变量
   （运维密管，`openssl rand -hex 64` 生成后注入）；未注入时每次启动随机生成且
   **不打印完整密钥**（日志只有前 8 位指纹），此时无法从日志取回，正式部署必须显式注入。
-  无登录页，401 才弹密钥门
+  无登录页，地址不可达或 401 才弹「API 设置」框（同屏配置 API 地址与管理密钥）
 - 客户端接口：通道/公告需 `X-App-Id`（只读）；更新信息按 guid 即可取
 - 管理路由统一放 `routes/admin/` 目录（目录头注释声明领域边界），
   公开接口在 `routes/{app,resources}.rs`，**不混写**
@@ -116,7 +116,7 @@ http/https URL（`routes/admin/pools.rs` 校验）。FTP `secure: true` 走显�
 - 路径无尾斜杠：`/api/v1/app/channels/`、`/announces/` 这种带 `/` 的请求 404
   （axum 不做斜杠重定向）；`/admin/apps/` 因 nest+`/` 反而兼容——客户端拼 URL 勿加尾斜杠
 - admin key 取法：`openssl rand -hex 64` 填入 `environment` 的 `ADMIN_KEY` 后
-  `docker compose up -d`，WebUI 密钥门粘贴同一值；日志只核对前 8 位指纹。
+  `docker compose up -d`，WebUI「设置」框粘贴同一值；日志只核对前 8 位指纹。
 
 ## 7. 部署拓扑
 
@@ -128,7 +128,7 @@ coo-web（caddy + anubis 预留）/ coo-api（pgsql + router）两个 internal �
 
 - 预构建镜像发布：`.github/workflows/docker-publish.yml` 构建 `cooservice`（API）
   与 `cooservice-web`（WebUI）两个镜像推 GHCR，release 触发或手动 dispatch；
-  WebUI 镜像构建期的 `VITE_BASE_API` 来自手动输入或仓库变量 `WEB_BASE_API`
+  WebUI 的 API 地址由界面「设置」框运行时配置，镜像不含任何构建期地址
 - `compose.yml`：全部 `image:` 拉取预构建镜像；部署变量集中在 `environment` 文件
   （Weblate 风格，分节注释、可选变量注释留档），compose 经 `env_file` 读取。
   `coo-pgsql`（不发布端口）+ `coo-router`（127.0.0.1:8081

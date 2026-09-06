@@ -1,8 +1,5 @@
 # WebUI 两段构建：node 编出静态文件，caddy 只托管静态（不反代 API）。
-# API 基址两层可配：
-#   · 运行时 API_BASE_URL（caddy 容器环境变量，entrypoint.sh 写入 config.js）——部署常用
-#   · 构建期 VITE_BASE_API（ARG，编译进 JS 作兜底，本地 vite dev 也用它）
-# 运行时未配置时回退构建期值；两者都空 = 同源。
+# API 基址由 WebUI 内「设置」框（ApiSetupDialog）配置，不再构建期注入。
 
 FROM docker.io/library/node:24-alpine AS build
 WORKDIR /web
@@ -12,13 +9,8 @@ RUN npm install -g pnpm@10
 COPY web/package.json web/pnpm-lock.yaml web/pnpm-workspace.yaml ./
 RUN pnpm install --frozen-lockfile
 COPY web/ ./
-ARG VITE_BASE_API=
-ENV VITE_BASE_API=$VITE_BASE_API
 RUN pnpm build
 
 FROM docker.io/library/caddy:2
 COPY --from=build /web/dist /usr/share/caddy
 COPY Caddyfile /etc/caddy/Caddyfile
-# 启动时生成运行时配置（config.js / auth.conf），见文件头注释
-COPY docker/entrypoint.sh /entrypoint.sh
-ENTRYPOINT ["/entrypoint.sh"]

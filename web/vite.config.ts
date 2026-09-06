@@ -7,12 +7,6 @@ export default defineConfig({
   server: {
     host: '127.0.0.1',
     port: 5173,
-    // 开发时直连本地服务；生产靠构建期注入的 VITE_BASE_API
-    proxy: {
-      '/api': {
-        target: process.env.VITE_BASE_API ?? 'http://127.0.0.1:8081',
-        changeOrigin: true,
-      },
-    },
+    // 无 /api 代理：API 地址由 WebUI 内「设置」框配置（留空 = 同源），浏览器直连（CORS）
   },
 });

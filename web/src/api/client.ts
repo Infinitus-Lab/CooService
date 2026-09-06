@@ -25,17 +25,6 @@ import type {
   UploadedView,
 } from './types';
 
-// config.js 由容器注入（运行时 API_BASE_URL，空串 = 未配置），
-// 空串时回退构建期 VITE_BASE_API，再退同源
-export const BASE_API = window.API_BASE_URL || import.meta.env.VITE_BASE_API || '';
-
-declare global {
-  interface Window {
-    /** 运行时注入的 API 基址（caddy 容器 entrypoint 生成的 config.js），优先于构建期 VITE_BASE_API */
-    API_BASE_URL?: string;
-  }
-}
-
 /// 所有接口统一返回这个信封
 interface Envelope<T> {
   code: number;
@@ -94,8 +83,12 @@ function friendlyError(code: number, message: string): string {
 
 class Client {
   constructor(
+    /** API 基址；空串 = 同源（由 ApiSetupDialog 配置） */
+    private readonly baseApi: string,
     private readonly adminKey: () => string,
     private readonly onUnauthorized: () => void,
+    /** 地址不可达（fetch 失败 / 目标不是 CooService API）时回调，用于弹出设置框 */
+    private readonly onUnreachable: () => void,
   ) {}
 
   private async finish<T>(response: Response, path: string): Promise<T> {
@@ -116,6 +109,12 @@ class Client {
       );
     }
 
+    // 200 但非 JSON 信封：目标不是 CooService API（如 SPA 回退页/错误页），视作地址不可达
+    if (!envelope) {
+      this.onUnreachable();
+      throw new ApiError(0, '返回的不是 CooService API 响应，请检查 API 地址');
+    }
+
     return envelope?.data as T;
   }
 
@@ -127,7 +126,7 @@ class Client {
   ): Promise<T> {
     let response: Response;
     try {
-      response = await fetch(`${BASE_API}${path}`, {
+      response = await fetch(`${this.baseApi}${path}`, {
         method,
         headers: {
           ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
@@ -136,7 +135,8 @@ class Client {
         body: body === undefined ? undefined : JSON.stringify(body),
       });
     } catch {
-      throw new ApiError(0, `连不上服务（${BASE_API || '同源'}）`);
+      this.onUnreachable();
+      throw new ApiError(0, `连不上服务（${this.baseApi || '同源'}）`);
     }
     return this.finish<T>(response, path);
   }
@@ -145,13 +145,14 @@ class Client {
   private async raw<T>(method: string, path: string, body: Blob): Promise<T> {
     let response: Response;
     try {
-      response = await fetch(`${BASE_API}${path}`, {
+      response = await fetch(`${this.baseApi}${path}`, {
         method,
         headers: { 'X-Admin-Key': this.adminKey() },
         body,
       });
     } catch {
-      throw new ApiError(0, `连不上服务（${BASE_API || '同源'}）`);
+      this.onUnreachable();
+      throw new ApiError(0, `连不上服务（${this.baseApi || '同源'}）`);
     }
     return this.finish<T>(response, path);
   }
@@ -316,8 +317,10 @@ class Client {
 }
 
 export const createClient = (
+  baseApi: string,
   adminKey: () => string,
   onUnauthorized: () => void,
-) => new Client(adminKey, onUnauthorized);
+  onUnreachable: () => void,
+) => new Client(baseApi, adminKey, onUnauthorized, onUnreachable);
 
 export type ApiClient = Client;

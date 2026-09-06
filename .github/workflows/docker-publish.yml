@@ -2,7 +2,7 @@
 #   ghcr.io/OWNER/COOSERVICE       API 服务（Containerfile）
 #   ghcr.io/OWNER/COOSERVICE-WEB   WebUI / caddy 静态托管（Containerfile.web）
 # 触发：发 release 即发布；也可 workflow_dispatch 手动发布当前分支。
-# WebUI 的 API 域名在构建期注入：手动触发用输入，release 触发用仓库变量 WEB_BASE_API。
+# WebUI 的 API 地址运行时在界面「设置」框配置，不再构建期注入。
 
 name: Publish Docker image
 
@@ -10,12 +10,6 @@ on:
   release:
     types: [published]
   workflow_dispatch:
-    inputs:
-      web_base_api:
-        description: WebUI 镜像构建期注入的 API 域名（如 https://api.example.com），留空则同源
-        required: false
-        type: string
-        default: ""
 
 env:
   REGISTRY: ghcr.io
@@ -39,9 +33,6 @@ jobs:
           registry: ${{ env.REGISTRY }}
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Resolve WebUI API base
-        run: echo "WEB_BASE_API=${{ inputs.web_base_api || vars.WEB_BASE_API }}" >> "$GITHUB_ENV"
 
       # 两个镜像各自生成 tag/label：release 给 semver + latest，手动触发给分支名 + latest
       - name: Extract metadata for API image
@@ -73,7 +64,6 @@ jobs:
           context: .
           file: ./Containerfile.web
           push: true
-          build-args: VITE_BASE_API=${{ env.WEB_BASE_API }}
           tags: ${{ steps.meta-web.outputs.tags }}
           labels: ${{ steps.meta-web.outputs.labels }}
 

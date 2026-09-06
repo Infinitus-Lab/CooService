@@ -66,8 +66,6 @@ services:
   caddy:
     image: ghcr.io/infinitus-lab/cooservice-web:latest
     container_name: coo-caddy
-    # API_BASE_URL 来自 environment（见该文件 WebUI 节）
-    env_file: ./environment
     restart: unless-stopped
     # 无对外端口：只被 coo-web 内网的 anubis 转发访问
     networks:
