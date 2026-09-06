@@ -13,7 +13,10 @@
 
 use std::{
     collections::{HashMap, HashSet},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
 };
 
 use chrono::{DateTime, Utc};
@@ -72,6 +75,8 @@ pub struct PoolSync {
     known: DashMap<String, HashSet<String>>,
     /// 变动通知（broadcast：任意数量接收者都能听到，无人监听时静默丢弃）
     tx: tokio::sync::broadcast::Sender<()>,
+    /// 全扫描互斥：scan 接口并发触发时第二个直接跳过，避免重复 LIST + push
+    scanning: AtomicBool,
 }
 
 impl PoolSync {
@@ -84,6 +89,7 @@ impl PoolSync {
             states: DashMap::new(),
             known: DashMap::new(),
             tx,
+            scanning: AtomicBool::new(false),
         })
     }
 
@@ -126,7 +132,20 @@ impl PoolSync {
     }
 
     /// 全扫描重建各池实有集并补齐缺失（模型见模块头）。返回各池状态。
+    /// 并发安全：已有扫描在进行时直接返回空结果（跳过本轮），由调用方提示稍后查询状态。
     pub async fn full_scan(
+        &self,
+    ) -> Result<HashMap<String, PoolSyncInfo>, database::error::DatabaseError> {
+        if self.scanning.swap(true, Ordering::SeqCst) {
+            tracing::warn!("pool scan already in progress, skipping concurrent scan");
+            return Ok(HashMap::new());
+        }
+        let result = self.full_scan_inner().await;
+        self.scanning.store(false, Ordering::SeqCst);
+        result
+    }
+
+    async fn full_scan_inner(
         &self,
     ) -> Result<HashMap<String, PoolSyncInfo>, database::error::DatabaseError> {
         let expected = repo::resource::shas_by_pool(&self.db).await?;

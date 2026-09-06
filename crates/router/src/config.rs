@@ -28,6 +28,8 @@ pub struct ServerConfig {
     pub max_upload_bytes: u64,
     /// 公开端点每 IP 限流（次/分钟），环境变量 `PUBLIC_RATE_LIMIT`，默认 120
     pub public_rate_limit: u32,
+    /// 是否信任 `X-Forwarded-For`（可信反代后部署时开），环境变量 `TRUST_X_FORWARDED_FOR`
+    pub trust_x_forwarded_for: bool,
     /// 管理密钥：`ADMIN_KEY` 未设置时随机生成（不可恢复，见 `auth` 模块头）
     pub admin_key: String,
     /// CORS 允许的 Origin 白名单（逗号分隔）；为空时放行全部（仅限内网开发）
@@ -55,6 +57,9 @@ impl ServerConfig {
         let max_upload_bytes = parse_env::<u64>("MAX_UPLOAD_BYTES")?.unwrap_or(DEFAULT_MAX_UPLOAD_BYTES);
         let public_rate_limit =
             parse_env::<u32>("PUBLIC_RATE_LIMIT")?.unwrap_or(DEFAULT_PUBLIC_RATE_LIMIT);
+        let trust_x_forwarded_for = env::var("TRUST_X_FORWARDED_FOR")
+            .ok()
+            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
 
         // 管理密钥：显式注入优先，未注入则随机生成（主密钥不可从日志取回）
         let admin_key = match env::var("ADMIN_KEY").ok().filter(|s| !s.is_empty()) {
@@ -80,6 +85,7 @@ impl ServerConfig {
             pool_health_timeout: Duration::from_secs(pool_health_timeout),
             max_upload_bytes,
             public_rate_limit,
+            trust_x_forwarded_for,
             admin_key,
             cors_allowed_origins,
         })
@@ -98,6 +104,7 @@ impl Default for ServerConfig {
             pool_health_timeout: Duration::from_secs(DEFAULT_POOL_HEALTH_TIMEOUT_SECS),
             max_upload_bytes: DEFAULT_MAX_UPLOAD_BYTES,
             public_rate_limit: DEFAULT_PUBLIC_RATE_LIMIT,
+            trust_x_forwarded_for: false,
             admin_key: hex_encode(&[0u8; 64]), // Only used in tests where auth isn't exercised
             cors_allowed_origins: Vec::new(),
         }

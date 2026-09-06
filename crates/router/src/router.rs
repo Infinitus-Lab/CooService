@@ -66,10 +66,8 @@ pub fn build_router(
     // 上传分支：body 上限显式生效（Body 提取器不吃 DefaultBodyLimit，需 RequestBodyLimitLayer），
     // 且不受 30s 超时约束——大文件慢链路上传由大小上限兜底，超时由读写层自行处理。
     let upload = Router::new()
-        .route(
-            "/admin/resources",
-            put(admin::resources::upload),
-        )
+        .route("/admin/resources", put(admin::resources::upload))
+        .layer(TraceLayer::new_for_http())
         .layer(RequestBodyLimitLayer::new(
             state.request_max_upload_bytes as usize,
         ))

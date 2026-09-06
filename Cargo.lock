@@ -1617,6 +1617,7 @@ dependencies = [
  "dashmap",
  "database",
  "futures-util",
+ "http-body-util",
  "rand",
  "resource",
  "serde",

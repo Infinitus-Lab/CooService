@@ -68,6 +68,7 @@ async fn connect_all(
                 password: secret,
                 root: string(&row, "root"),
                 secure: bool_of(&row, "secure"),
+                insecure_skip_verify: bool_of(&row, "secure_skip_verify"),
             })
             .await
             .map(|pool| Arc::new(pool) as Arc<dyn RemotePool>)

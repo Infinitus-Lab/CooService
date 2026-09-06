@@ -465,21 +465,28 @@ fn validate_config(kind: &str, config: &Value) -> Result<(), AppError> {
         Ok(())
     };
 
+    let require_bool = |key: &str| -> Result<(), AppError> {
+        if let Some(value) = config.get(key)
+            && !value.is_boolean()
+        {
+            return Err(AppError::BadRequest(format!(
+                "{kind} pool config.{key} must be a boolean"
+            )));
+        }
+        Ok(())
+    };
+
     match kind {
         "s3" => {
             for key in ["bucket", "region", "access_key"] {
                 require_str(key)?;
             }
-            if let Some(path_style) = config.get("path_style")
-                && !path_style.is_boolean()
-            {
-                return Err(AppError::BadRequest(
-                    "s3 pool config.path_style must be a boolean".into(),
-                ));
-            }
+            require_bool("path_style")?;
         }
         "ftp" => {
             require_str("user")?;
+            require_bool("secure")?;
+            require_bool("secure_skip_verify")?;
             if let Some(port) = config.get("port")
                 && !port.is_number()
             {

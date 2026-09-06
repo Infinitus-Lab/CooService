@@ -28,6 +28,14 @@ pub enum AppError {
     #[error("conflict: {0}")]
     Conflict(String),
 
+    /// 请求体超过上传上限（`MAX_UPLOAD_BYTES`）
+    #[error("payload too large")]
+    PayloadTooLarge,
+
+    /// 公开接口限流触发（每 IP 每窗口）
+    #[error("rate limited, try again later")]
+    RateLimited,
+
     /// 上游（资源池 / 数据库）短暂不可用
     #[error("bad gateway: {0}")]
     BadGateway(String),
@@ -72,6 +80,8 @@ impl AppError {
             Self::Forbidden(_) => StatusCode::FORBIDDEN,
             Self::NotFound(_) => StatusCode::NOT_FOUND,
             Self::Conflict(_) => StatusCode::CONFLICT,
+            Self::PayloadTooLarge => StatusCode::PAYLOAD_TOO_LARGE,
+            Self::RateLimited => StatusCode::TOO_MANY_REQUESTS,
             Self::BadGateway(_) => StatusCode::BAD_GATEWAY,
             Self::ServiceUnavailable(_) => StatusCode::SERVICE_UNAVAILABLE,
             Self::Internal(_) => StatusCode::INTERNAL_SERVER_ERROR,

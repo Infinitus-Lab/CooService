@@ -34,6 +34,8 @@ pub struct FtpConfig {
     pub root: String,
     /// true 时用显式 FTPS（AUTH TLS），凭据与内容都走加密通道
     pub secure: bool,
+    /// 仅配合 `secure`：跳过证书校验（自建 FTPS 用自签证书时开；生产公网不建议）
+    pub insecure_skip_verify: bool,
 }
 
 /// 一个 FTP 池：整池共用一条控制连接，操作串行化。
@@ -50,8 +52,10 @@ impl FtpPool {
     pub async fn connect(config: FtpConfig) -> Result<Self, PoolError> {
         let mut stream = AsyncNativeTlsFtpStream::connect((config.host.as_str(), config.port)).await?;
         if config.secure {
-            let connector =
-                AsyncNativeTlsConnector::from(suppaftp::async_native_tls::TlsConnector::new());
+            let connector = AsyncNativeTlsConnector::from(
+                suppaftp::async_native_tls::TlsConnector::new()
+                    .danger_accept_invalid_certs(config.insecure_skip_verify),
+            );
             stream = stream.into_secure(connector, &config.host).await?;
         }
         stream.login(&config.user, &config.password).await?;

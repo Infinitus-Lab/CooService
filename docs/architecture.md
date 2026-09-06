@@ -66,7 +66,8 @@ crates/
 `config` 按 kind 校验（s3 缺 bucket/region/access_key、ftp 缺 user → 400），DB CHECK
 要求 JSON 对象、`is_public` 必须有非空 `public_endpoint`；`public_endpoint` 必须是
 http/https URL（`routes/admin/pools.rs` 校验）。FTP `secure: true` 走显式 FTPS
-（AUTH TLS，凭据与内容加密过网）。
+（AUTH TLS，凭据与内容加密过网）；自建 FTPS 自签证书可加 `secure_skip_verify: true`
+（生产公网不建议）。
 
 ### 4.2 在线情况（resource crate）
 
@@ -152,6 +153,7 @@ coo-web（caddy + anubis 预留）/ coo-api（pgsql + router）两个 internal �
 | `STORAGE_SECRET_MASTER_KEY` | 无 | 池凭据 AES-256 主密钥（64 位 hex）；不配置则明文落库并告警 |
 | `MAX_UPLOAD_BYTES` | 2 GiB | 上传请求体上限（超出 413，慢链路不受请求超时约束） |
 | `PUBLIC_RATE_LIMIT` | 120 | 公开端点每 IP 每分钟限流 |
+| `TRUST_X_FORWARDED_FOR` | 0 | 挂可信反代后置 1：限流按 XFF 计客户端 IP（否则共享代理 IP 全局限流） |
 | `CORS_ALLOWED_ORIGINS` | 空（放行全部） | 逗号分隔的 Origin 白名单 |
 | `RUST_LOG` | info | 日志级别 |
 

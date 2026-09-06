@@ -63,7 +63,12 @@ async fn run() -> anyhow::Result<()> {
     }
     let admin_key = config.admin_key.clone();
     let public_cache = Arc::new(PublicCache::new(std::time::Duration::from_secs(5)));
-    let rate_limiter = Arc::new(RateLimiter::new(config.public_rate_limit));
+    let rate_limiter = Arc::new(RateLimiter::new(
+        config.public_rate_limit,
+        config.trust_x_forwarded_for,
+    ));
+    // 限流桶周期清扫：防 IPv6 轮换地址让桶表无限膨胀
+    rate_limiter.spawn_cleaner();
     let state = AppState::new(
         apps,
         resources,

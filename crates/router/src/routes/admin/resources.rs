@@ -25,6 +25,20 @@ use uuid::Uuid;
 
 use crate::{ApiOk, ApiResult, AppError, auth::hex_encode, response::with_status, state::AppState};
 
+/// `RequestBodyLimitLayer` 读流中途触发上限时，错误链里会挂着 `LengthLimitError`。
+fn is_length_limit_error(e: &std::io::Error) -> bool {
+    use std::error::Error as _;
+
+    let mut source = e.source();
+    while let Some(err) = source {
+        if err.is::<http_body_util::LengthLimitError>() {
+            return true;
+        }
+        source = err.source();
+    }
+    false
+}
+
 pub fn admin_router() -> Router<AppState> {
     Router::new()
         .route("/", get(list))
@@ -134,6 +148,10 @@ pub async fn upload(
         };
         if let Err(e) = tokio::io::copy(&mut reader, &mut file).await {
             let _ = tokio::fs::remove_file(&tmp_path).await;
+            // 超限（RequestBodyLimitLayer 的 LengthLimitError）映射 413，其余读失败才是 400
+            if is_length_limit_error(&e) {
+                return Err(AppError::PayloadTooLarge);
+            }
             return Err(AppError::BadRequest(format!(
                 "upload body read failed: {e}"
             )));
