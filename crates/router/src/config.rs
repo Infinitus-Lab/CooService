@@ -43,18 +43,19 @@ impl ServerConfig {
             .parse()
             .map_err(|e| anyhow::anyhow!("invalid BIND_ADDR: {e}"))?;
 
-        let request_timeout = parse_env::<u64>("REQUEST_TIMEOUT_SECS")?
-            .unwrap_or(DEFAULT_REQUEST_TIMEOUT_SECS);
+        let request_timeout =
+            parse_env::<u64>("REQUEST_TIMEOUT_SECS")?.unwrap_or(DEFAULT_REQUEST_TIMEOUT_SECS);
         let local_resource_dir = env::var("LOCAL_RESOURCE_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_LOCAL_RESOURCE_DIR));
 
-        let pool_health_interval =
-            parse_env::<u64>("POOL_HEALTH_INTERVAL_SECS")?.unwrap_or(DEFAULT_POOL_HEALTH_INTERVAL_SECS);
-        let pool_health_timeout =
-            parse_env::<u64>("POOL_HEALTH_TIMEOUT_SECS")?.unwrap_or(DEFAULT_POOL_HEALTH_TIMEOUT_SECS);
+        let pool_health_interval = parse_env::<u64>("POOL_HEALTH_INTERVAL_SECS")?
+            .unwrap_or(DEFAULT_POOL_HEALTH_INTERVAL_SECS);
+        let pool_health_timeout = parse_env::<u64>("POOL_HEALTH_TIMEOUT_SECS")?
+            .unwrap_or(DEFAULT_POOL_HEALTH_TIMEOUT_SECS);
 
-        let max_upload_bytes = parse_env::<u64>("MAX_UPLOAD_BYTES")?.unwrap_or(DEFAULT_MAX_UPLOAD_BYTES);
+        let max_upload_bytes =
+            parse_env::<u64>("MAX_UPLOAD_BYTES")?.unwrap_or(DEFAULT_MAX_UPLOAD_BYTES);
         let public_rate_limit =
             parse_env::<u32>("PUBLIC_RATE_LIMIT")?.unwrap_or(DEFAULT_PUBLIC_RATE_LIMIT);
         let trust_x_forwarded_for = env::var("TRUST_X_FORWARDED_FOR")
@@ -73,7 +74,13 @@ impl ServerConfig {
         };
 
         let cors_allowed_origins = env::var("CORS_ALLOWED_ORIGINS")
-            .map(|raw| raw.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect())
+            .map(|raw| {
+                raw.split(',')
+                    .map(str::trim)
+                    .filter(|s| !s.is_empty())
+                    .map(str::to_string)
+                    .collect()
+            })
             .unwrap_or_default();
 
         Ok(Self {

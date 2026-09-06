@@ -72,7 +72,8 @@ impl RateLimiter {
                 tokio::time::sleep(this.window).await;
                 let now = Instant::now();
                 // 保留两个窗口宽限，避免刚重置的桶被误删
-                this.buckets.retain(|_, b| now.duration_since(b.window_start) < this.window * 2);
+                this.buckets
+                    .retain(|_, b| now.duration_since(b.window_start) < this.window * 2);
             }
         })
     }
@@ -126,11 +127,8 @@ mod tests {
         assert!(limiter.check(ip));
         assert!(!limiter.check(ip));
         // 模拟进入下一个窗口：计数应重置
-        limiter
-            .buckets
-            .get_mut(&ip)
-            .unwrap()
-            .window_start = Instant::now() - Duration::from_secs(61);
+        limiter.buckets.get_mut(&ip).unwrap().window_start =
+            Instant::now() - Duration::from_secs(61);
         assert!(limiter.check(ip));
     }
 }

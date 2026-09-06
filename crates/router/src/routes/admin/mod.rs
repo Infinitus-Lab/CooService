@@ -10,11 +10,11 @@ pub mod channels;
 pub mod pools;
 pub mod resources;
 
-use axum::{
-    Router, extract::State, middleware, routing::post,
-};
+use axum::{Router, extract::State, middleware, routing::post};
 
-use crate::{ApiOk, ApiResult, auth::require_admin_key, pools::reload_resource_pools, state::AppState};
+use crate::{
+    ApiOk, ApiResult, auth::require_admin_key, pools::reload_resource_pools, state::AppState,
+};
 
 pub fn router(state: &AppState) -> Router<AppState> {
     Router::new()
@@ -35,11 +35,15 @@ pub fn router(state: &AppState) -> Router<AppState> {
 async fn reload(State(state): State<AppState>) -> ApiResult<String> {
     if let Err(e) = state.apps.reload().await {
         tracing::error!(error = %e, "reload apps failed");
-        return Err(crate::AppError::Internal(anyhow::anyhow!("reload apps failed: {e}")));
+        return Err(crate::AppError::Internal(anyhow::anyhow!(
+            "reload apps failed: {e}"
+        )));
     }
     if let Err(e) = reload_resource_pools(&state.resources, &state.pool_meta, &state.db).await {
         tracing::error!(error = %e, "reload pools failed");
-        return Err(crate::AppError::Internal(anyhow::anyhow!("reload pools failed: {e}")));
+        return Err(crate::AppError::Internal(anyhow::anyhow!(
+            "reload pools failed: {e}"
+        )));
     }
     // reload 后新池重新注册，让同步引擎补上实有集
     state.sync.notify();

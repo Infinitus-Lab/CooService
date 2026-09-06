@@ -19,10 +19,7 @@ use axum::{
 };
 use tower::ServiceBuilder;
 use tower_http::{
-    cors::CorsLayer,
-    limit::RequestBodyLimitLayer,
-    timeout::TimeoutLayer,
-    trace::TraceLayer,
+    cors::CorsLayer, limit::RequestBodyLimitLayer, timeout::TimeoutLayer, trace::TraceLayer,
 };
 
 use crate::{
@@ -50,17 +47,15 @@ pub fn build_router(
             crate::ratelimit::ratelimit,
         ));
 
-    let timed = routes::v1::router(&state)
-        .merge(public)
-        .layer(
-            ServiceBuilder::new()
-                .layer(TraceLayer::new_for_http())
-                .layer(TimeoutLayer::with_status_code(
-                    StatusCode::REQUEST_TIMEOUT,
-                    request_timeout,
-                ))
-                .layer(cors.clone()),
-        );
+    let v1_api = routes::v1::router(&state).merge(public).layer(
+        ServiceBuilder::new()
+            .layer(TraceLayer::new_for_http())
+            .layer(TimeoutLayer::with_status_code(
+                StatusCode::REQUEST_TIMEOUT,
+                request_timeout,
+            ))
+            .layer(cors.clone()),
+    );
 
     // 上传分支：body 上限显式生效（Body 提取器不吃 DefaultBodyLimit，需 RequestBodyLimitLayer），
     // 且不受 30s 超时约束——大文件慢链路上传由大小上限兜底，超时由读写层自行处理。
@@ -77,7 +72,7 @@ pub fn build_router(
 
     Router::new()
         .route("/healthz", axum::routing::get(health))
-        .nest("/api", Router::new().nest("/v1", timed.merge(upload)))
+        .nest("/api", Router::new().nest("/v1", v1_api.merge(upload)))
         .fallback(not_found)
         .layer(cors)
         .with_state(state)

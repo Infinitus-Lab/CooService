@@ -84,8 +84,11 @@ async fn run() -> anyhow::Result<()> {
         public_cache,
         rate_limiter,
     );
-    let app =
-        build_router(state, config.request_timeout, config.cors_allowed_origins.clone());
+    let app = build_router(
+        state,
+        config.request_timeout,
+        config.cors_allowed_origins.clone(),
+    );
 
     let listener = tokio::net::TcpListener::bind(config.bind_addr).await?;
     tracing::info!(addr = %config.bind_addr, "listening");

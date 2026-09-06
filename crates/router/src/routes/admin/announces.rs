@@ -81,7 +81,9 @@ async fn list(
         None => repo::announce::list_all(&state.db).await?,
     };
 
-    Ok(ApiOk(rows.into_iter().map(AnnounceView::from_row).collect()))
+    Ok(ApiOk(
+        rows.into_iter().map(AnnounceView::from_row).collect(),
+    ))
 }
 
 async fn create(

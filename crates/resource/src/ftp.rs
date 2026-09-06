@@ -49,7 +49,8 @@ pub struct FtpPool {
 impl FtpPool {
     /// 建连、登录、切二进制，并校验一次根目录列表。
     pub async fn connect(config: FtpConfig) -> Result<Self, PoolError> {
-        let mut stream = AsyncNativeTlsFtpStream::connect((config.host.as_str(), config.port)).await?;
+        let mut stream =
+            AsyncNativeTlsFtpStream::connect((config.host.as_str(), config.port)).await?;
         if config.secure {
             let connector = AsyncNativeTlsConnector::from(
                 suppaftp::async_native_tls::TlsConnector::new()

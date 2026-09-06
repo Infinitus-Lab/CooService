@@ -67,11 +67,8 @@ mod tests {
         let cache = PublicCache::new(Duration::from_secs(10));
         cache.insert("k".into(), Value::Null);
         assert!(cache.get("k").is_some());
-        cache
-            .entries
-            .get_mut(&"k".to_string())
-            .unwrap()
-            .0 = Instant::now() - Duration::from_secs(11);
+        cache.entries.get_mut(&"k".to_string()).unwrap().0 =
+            Instant::now() - Duration::from_secs(11);
         assert!(cache.get("k").is_none());
     }
 }

@@ -21,9 +21,7 @@ use resource::pool::RemotePool;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
-use crate::{
-    ApiOk, ApiResult, AppError, response::with_status, state::AppState,
-};
+use crate::{ApiOk, ApiResult, AppError, response::with_status, state::AppState};
 
 pub fn router() -> Router<AppState> {
     Router::new()
@@ -216,7 +214,10 @@ async fn modify(
     }
 
     // 生效后的公开终结点与开关（含未改动的现值），统一校验 scheme 与组合约束
-    let effective_public = body.public_endpoint.as_deref().unwrap_or(&row.public_endpoint);
+    let effective_public = body
+        .public_endpoint
+        .as_deref()
+        .unwrap_or(&row.public_endpoint);
     let effective_is_public = body.is_public.unwrap_or(row.is_public);
     validate_public_endpoint(effective_public, effective_is_public)?;
 

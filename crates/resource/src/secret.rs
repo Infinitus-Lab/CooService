@@ -8,10 +8,7 @@
 //!
 //! 旧数据兼容：不以 `enc:v1:` 开头的值视为历史明文，原样返回。
 
-use aes_gcm::{
-    Aes256Gcm, Key, KeyInit, Nonce,
-    aead::Aead,
-};
+use aes_gcm::{Aes256Gcm, Key, KeyInit, Nonce, aead::Aead};
 use base64::Engine;
 use rand::{TryRng, rngs::SysRng};
 

@@ -4,7 +4,7 @@ mod error;
 pub mod ftp;
 pub mod health;
 pub mod key;
-pub mod secret;
 pub mod local;
 pub mod pool;
 pub mod s3;
+pub mod secret;
