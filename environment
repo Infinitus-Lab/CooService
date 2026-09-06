@@ -14,6 +14,10 @@ ADMIN_KEY=
 STORAGE_SECRET_MASTER_KEY=
 DATABASE_URL=postgresql://cooservice:change-me@coo-pgsql:5432/cooservice
 
+# ===== WebUI =====
+# 前端运行时 API 基址；留空则回退镜像构建期注入的 VITE_BASE_API（再退同源）
+API_BASE_URL=
+
 # ===== 可选 =====
 #CORS_ALLOWED_ORIGINS=https://example.com          # Origin 白名单，逗号分隔；留空=放行全部（仅内网）
 #MAX_UPLOAD_BYTES=2147483648                       # 上传请求体上限（字节）

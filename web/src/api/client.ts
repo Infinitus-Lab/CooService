@@ -25,7 +25,16 @@ import type {
   UploadedView,
 } from './types';
 
-export const BASE_API = import.meta.env.VITE_BASE_API ?? '';
+// config.js 由容器注入（运行时 API_BASE_URL，空串 = 未配置），
+// 空串时回退构建期 VITE_BASE_API，再退同源
+export const BASE_API = window.API_BASE_URL || import.meta.env.VITE_BASE_API || '';
+
+declare global {
+  interface Window {
+    /** 运行时注入的 API 基址（caddy 容器 entrypoint 生成的 config.js），优先于构建期 VITE_BASE_API */
+    API_BASE_URL?: string;
+  }
+}
 
 /// 所有接口统一返回这个信封
 interface Envelope<T> {
