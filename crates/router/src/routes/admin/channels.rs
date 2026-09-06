@@ -11,7 +11,6 @@ use axum::{
     routing::{delete, get},
 };
 use database::repo;
-use resource::key::object_key;
 use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
@@ -112,7 +111,7 @@ async fn create(
     State(state): State<AppState>,
     Json(body): Json<CreateChannelRequest>,
 ) -> Result<Response, AppError> {
-    validate_sha256(&body.latest_sha256)?;
+    let latest_sha256 = normalize_sha256(&body.latest_sha256)?;
 
     // 先查后插：app / 资源不存在给 400，而不是撞外键变成 409
     if !repo::app::exists(&state.db, body.app_id).await? {
@@ -121,10 +120,10 @@ async fn create(
             body.app_id
         )));
     }
-    if !repo::resource::exists(&state.db, &body.latest_sha256).await? {
+    if !repo::resource::exists(&state.db, &latest_sha256).await? {
         return Err(AppError::BadRequest(format!(
             "resource {} does not exist",
-            body.latest_sha256
+            latest_sha256
         )));
     }
 
@@ -135,7 +134,7 @@ async fn create(
         body.app_id,
         &body.tag_name,
         &body.latest_version,
-        &body.latest_sha256,
+        &latest_sha256,
         body.is_default,
     )
     .await?;
@@ -152,13 +151,17 @@ async fn modify(
     State(state): State<AppState>,
     Json(body): Json<UpdateChannelRequest>,
 ) -> ApiResult<ChannelView> {
-    if let Some(sha256) = &body.latest_sha256 {
-        validate_sha256(sha256)?;
-        if !repo::resource::exists(&state.db, sha256).await? {
-            return Err(AppError::BadRequest(format!(
-                "resource {sha256} does not exist"
-            )));
-        }
+    let latest_sha256 = body
+        .latest_sha256
+        .as_deref()
+        .map(normalize_sha256)
+        .transpose()?;
+    if let Some(sha256) = &latest_sha256
+        && !repo::resource::exists(&state.db, sha256).await?
+    {
+        return Err(AppError::BadRequest(format!(
+            "resource {sha256} does not exist"
+        )));
     }
 
     if !repo::channel::update(
@@ -166,7 +169,7 @@ async fn modify(
         guid,
         body.tag_name.as_deref(),
         body.latest_version.as_deref(),
-        body.latest_sha256.as_deref(),
+        latest_sha256.as_deref(),
         body.is_default,
     )
     .await?
@@ -218,22 +221,22 @@ async fn create_release(
     State(state): State<AppState>,
     Json(body): Json<CreateReleaseRequest>,
 ) -> Result<Response, AppError> {
-    validate_sha256(&body.sha256)?;
+    let sha256 = normalize_sha256(&body.sha256)?;
     ensure_channel(&state, guid).await?;
-    if !repo::resource::exists(&state.db, &body.sha256).await? {
+    if !repo::resource::exists(&state.db, &sha256).await? {
         return Err(AppError::BadRequest(format!(
             "resource {} does not exist",
-            body.sha256
+            sha256
         )));
     }
 
-    repo::channel::insert_release(&state.db, guid, &body.version, &body.sha256).await?;
+    repo::channel::insert_release(&state.db, guid, &body.version, &sha256).await?;
 
     Ok(with_status(
         StatusCode::CREATED,
         ReleaseView {
             version: body.version,
-            sha256: body.sha256,
+            sha256,
             created_at: chrono::Utc::now(),
         },
     ))
@@ -281,15 +284,15 @@ async fn create_diff(
     State(state): State<AppState>,
     Json(body): Json<CreateDiffRequest>,
 ) -> Result<Response, AppError> {
-    validate_sha256(&body.base_sha256)?;
-    validate_sha256(&body.patch_sha256)?;
-    if body.base_sha256 == body.patch_sha256 {
+    let base_sha256 = normalize_sha256(&body.base_sha256)?;
+    let patch_sha256 = normalize_sha256(&body.patch_sha256)?;
+    if base_sha256 == patch_sha256 {
         return Err(AppError::BadRequest(
             "base_sha256 与 patch_sha256 不能相同".into(),
         ));
     }
     ensure_channel(&state, guid).await?;
-    for sha256 in [&body.base_sha256, &body.patch_sha256] {
+    for sha256 in [&base_sha256, &patch_sha256] {
         if !repo::resource::exists(&state.db, sha256).await? {
             return Err(AppError::BadRequest(format!(
                 "resource {sha256} does not exist"
@@ -300,8 +303,8 @@ async fn create_diff(
     repo::channel::insert_diff(
         &state.db,
         guid,
-        &body.base_sha256,
-        &body.patch_sha256,
+        &base_sha256,
+        &patch_sha256,
         body.algo.as_deref(),
         body.size,
     )
@@ -310,8 +313,8 @@ async fn create_diff(
     Ok(with_status(
         StatusCode::CREATED,
         DiffView {
-            base_sha256: body.base_sha256,
-            patch_sha256: body.patch_sha256,
+            base_sha256,
+            patch_sha256,
             algo: body.algo,
             size: body.size,
         },
@@ -322,7 +325,7 @@ async fn delete_diff(
     Path((guid, base_sha256)): Path<(Uuid, String)>,
     State(state): State<AppState>,
 ) -> ApiResult<String> {
-    validate_sha256(&base_sha256)?;
+    let base_sha256 = normalize_sha256(&base_sha256)?;
     if !repo::channel::delete_diff(&state.db, guid, &base_sha256).await? {
         return Err(AppError::NotFound(base_sha256));
     }
@@ -330,10 +333,8 @@ async fn delete_diff(
     Ok(ApiOk(base_sha256))
 }
 
-fn validate_sha256(sha256: &str) -> Result<(), AppError> {
-    object_key(sha256)
-        .map(|_| ())
-        .map_err(|e| AppError::BadRequest(e.to_string()))
+fn normalize_sha256(sha256: &str) -> Result<String, AppError> {
+    resource::key::normalize_sha256(sha256).map_err(|e| AppError::BadRequest(e.to_string()))
 }
 
 /// 通道不存在时 404（release / diff 都挂在通道下）。

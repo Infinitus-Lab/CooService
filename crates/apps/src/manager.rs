@@ -142,12 +142,16 @@ impl AppManager {
         Ok(rows.into_iter().map(Channel::from_row).collect())
     }
 
-    /// 按 channel guid 取更新信息；guid 不存在返回 `Ok(None)`。
+    /// 按 channel guid 取更新信息；guid 不存在、或所属 app 已禁用返回 `Ok(None)`。
+    /// 与 `channels()` 语义一致：禁用 app 对整个外部视角都不可见。
     pub async fn update(&self, guid: Uuid) -> Result<Option<Update>, AppError> {
         let row = match channel::get(&self.db, guid).await? {
             Some(row) => row,
             None => return Ok(None),
         };
+        if self.apps.get(&row.app_id).is_none() {
+            return Ok(None);
+        }
         let diffs = channel::list_diffs(&self.db, guid).await?;
 
         Ok(Some(Update {

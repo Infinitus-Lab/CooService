@@ -117,7 +117,7 @@ export default function App() {
       </div>
 
       <footer className="footer footer-center text-base-content/50 p-4 text-xs">
-        CooService 管理台 · 管理密钥仅保存在当前标签页，接口返回 401 时将重新要求密钥
+        CooService 管理台 · 管理密钥仅保存在当前标签页（sessionStorage），接口返回 401 时将重新要求密钥
       </footer>
 
       {gateOpen && <KeyGate onSubmit={verify} />}
@@ -138,7 +138,7 @@ function KeyGate({ onSubmit }: { onSubmit: (key: string) => Promise<unknown> }) 
     } catch (e) {
       setError(
         e instanceof ApiError && e.code === 401
-          ? '密钥无效，请从服务启动日志重新获取'
+          ? '密钥无效，请确认与 ADMIN_KEY 环境变量一致'
           : e instanceof ApiError
             ? e.message
             : `连不上服务（${BASE_API || '同源'}）`,
@@ -158,13 +158,13 @@ function KeyGate({ onSubmit }: { onSubmit: (key: string) => Promise<unknown> }) 
           <span className="text-base-content/50 text-xs">X-Admin-Key</span>
         </div>
         <p className="mb-4 text-sm opacity-60">
-          管理密钥在服务每次启动时随机生成，仅打印于启动日志；粘贴后本页接口将自动恢复
+          管理密钥由运维通过 ADMIN_KEY 环境变量注入；粘贴后本页接口将自动恢复
         </p>
         <input
           type="password"
           autoFocus
           className="input w-full font-mono text-sm"
-          placeholder="粘贴启动日志里的 admin_key"
+          placeholder="粘贴 ADMIN_KEY 密钥"
           value={draft}
           onChange={(e) => setDraft(e.target.value)}
           onKeyDown={(e) => {

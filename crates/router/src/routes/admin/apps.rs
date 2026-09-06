@@ -156,20 +156,21 @@ async fn link_resource(
     State(state): State<AppState>,
     Json(body): Json<LinkResourceRequest>,
 ) -> Result<Response, AppError> {
-    resource::key::object_key(&body.sha256).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let sha256 = resource::key::normalize_sha256(&body.sha256)
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
     ensure_app_exists(&state.db, id).await?;
 
     // 先查后插：资源不存在时给 400，而不是撞 FK 变 500
-    let row = repo::resource::get(&state.db, &body.sha256)
+    let row = repo::resource::get(&state.db, &sha256)
         .await?
-        .ok_or_else(|| AppError::BadRequest(format!("resource {} does not exist", body.sha256)))?;
+        .ok_or_else(|| AppError::BadRequest(format!("resource {sha256} does not exist")))?;
 
-    repo::resource::link_app_resource(&state.db, id, &body.sha256).await?;
+    repo::resource::link_app_resource(&state.db, id, &sha256).await?;
 
     Ok(with_status(
         StatusCode::CREATED,
         AppResourceView {
-            sha256: body.sha256,
+            sha256,
             size: row.size,
         },
     ))
@@ -179,7 +180,8 @@ async fn unlink_resource(
     Path((id, sha256)): Path<(Uuid, String)>,
     State(state): State<AppState>,
 ) -> ApiResult<String> {
-    resource::key::object_key(&sha256).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let sha256 = resource::key::normalize_sha256(&sha256)
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
     ensure_app_exists(&state.db, id).await?;
 
     if !repo::resource::unlink_app_resource(&state.db, id, &sha256).await? {

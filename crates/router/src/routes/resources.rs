@@ -12,8 +12,8 @@ use axum::{
     routing::get,
 };
 use database::repo;
-use resource::key::object_key;
-use uuid::Uuid;
+use rand::RngExt;
+use resource::key::normalize_sha256;
 
 use crate::{AppError, state::AppState};
 
@@ -25,7 +25,7 @@ async fn fetch(
     Path(sha256): Path<String>,
     State(state): State<AppState>,
 ) -> Result<Response, AppError> {
-    let key = object_key(&sha256).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let sha256 = normalize_sha256(&sha256).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let row = repo::resource::get(&state.db, &sha256)
         .await?
@@ -63,6 +63,10 @@ async fn fetch(
         ));
     };
 
+    // 归一化只给小写 sha;302 指向的分片路径必须再过 object_key（ab/cdef...），
+    // 直接用 sha 会丢一级分片前缀，池侧 404
+    let key = resource::key::object_key(&sha256).expect("normalized above");
+
     let redirect = {
         let meta = state.pool_meta.get(pool_id).expect("candidate in meta");
         format!("{}/{key}", meta.public_endpoint.trim_end_matches('/'))
@@ -71,12 +75,12 @@ async fn fetch(
     Ok((StatusCode::FOUND, [(header::LOCATION, redirect)]).into_response())
 }
 
-/// 从候选里均匀随机挑一个：uuid 当随机源，避免多拉一个依赖。
+/// 从候选里均匀随机挑一个。
 fn pick<'a>(candidates: &'a [&str]) -> Option<&'a str> {
     if candidates.is_empty() {
         return None;
     }
 
-    let index = (Uuid::new_v4().as_u128() % candidates.len() as u128) as usize;
+    let index = rand::rng().random_range(0..candidates.len());
     Some(candidates[index])
 }

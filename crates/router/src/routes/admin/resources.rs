@@ -16,7 +16,7 @@ use axum::{
 use chrono::{DateTime, Utc};
 use database::{DatabaseError, repo};
 use futures_util::TryStreamExt;
-use resource::{key::object_key, pool::RemotePool};
+use resource::{key::normalize_sha256, key::object_key, pool::RemotePool};
 use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use tokio::io::AsyncRead;
@@ -27,7 +27,7 @@ use crate::{ApiOk, ApiResult, AppError, auth::hex_encode, response::with_status,
 
 pub fn admin_router() -> Router<AppState> {
     Router::new()
-        .route("/", get(list).put(upload))
+        .route("/", get(list))
         .route("/{sha256}", get(detail).patch(rename).delete(remove))
 }
 
@@ -64,6 +64,11 @@ async fn list(
     State(state): State<AppState>,
     Query(filter): Query<ListParams>,
 ) -> ApiResult<Vec<ResourceView>> {
+    // 过滤用的 sha256 也归一，避免大写输入查不到（非法值视为无过滤）
+    let filter_sha = filter
+        .sha256
+        .as_deref()
+        .and_then(|s| normalize_sha256(s).ok());
     let rows = repo::resource::list_all(&state.db).await?;
 
     Ok(ApiOk(
@@ -73,7 +78,7 @@ async fn list(
                     .pool
                     .as_ref()
                     .is_none_or(|p| row.pools.iter().any(|x| x == p))
-                    && filter.sha256.as_ref().is_none_or(|s| &row.sha256 == s)
+                    && filter_sha.as_ref().is_none_or(|s| &row.sha256 == s)
             })
             .map(|row| ResourceView {
                 sha256: row.sha256,
@@ -99,9 +104,10 @@ pub struct UploadedView {
     pub name: Option<String>,
 }
 
-/// 上传 = 临时文件（边写边算 sha256）→ 本地正式副本 → 入库。
+/// 上传：临时文件（边写边算 sha256）→ 本地正式副本 → 入库。
 /// 只落本地；进池是资源池管理的事（`pools.rs`）。
-async fn upload(
+/// 路由装配在顶层（`crate::router`），挂请求体上限 + admin 鉴权，且豁免全局超时。
+pub async fn upload(
     State(state): State<AppState>,
     Query(params): Query<UploadParams>,
     body: Body,
@@ -190,7 +196,7 @@ async fn detail(
     Path(sha256): Path<String>,
     State(state): State<AppState>,
 ) -> ApiResult<ResourceDetailView> {
-    object_key(&sha256).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let sha256 = normalize_sha256(&sha256).map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let row = repo::resource::detail(&state.db, &sha256)
         .await?
@@ -207,7 +213,8 @@ async fn detail(
 }
 
 async fn remove(Path(sha256): Path<String>, State(state): State<AppState>) -> ApiResult<String> {
-    let key = object_key(&sha256).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let sha256 = normalize_sha256(&sha256).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let key = object_key(&sha256).expect("normalized above");
 
     let row = repo::resource::get(&state.db, &sha256)
         .await?
@@ -253,7 +260,7 @@ async fn rename(
     State(state): State<AppState>,
     Json(body): Json<RenameRequest>,
 ) -> ApiResult<ResourceDetailView> {
-    object_key(&sha256).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let sha256 = normalize_sha256(&sha256).map_err(|e| AppError::BadRequest(e.to_string()))?;
     let name = body
         .name
         .as_deref()

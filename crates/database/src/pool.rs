@@ -19,6 +19,8 @@ impl Database {
         pg_config.connect_timeout(config.connect_timeout);
 
         let manager = Manager::new(pg_config, NoTls);
+        // NoTls：内网部署（coo-api 是 internal 网络），明文链路可接受；
+        // 若 DB 走公网或跨网段，应换成 TLS 连接（tokio-postgres 原生支持）
         let pool = Pool::builder(manager)
             .max_size(config.max_connections as usize)
             .runtime(Runtime::Tokio1)

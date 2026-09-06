@@ -46,13 +46,15 @@ async fn connect_all(
     db: &Database,
 ) -> anyhow::Result<()> {
     for row in repo::pool::list(db).await? {
+        // 库中存的是密文（见 resource::secret），建连前解密回明文
+        let secret = resource::secret::decrypt_secret(&row.secret);
         let pool: Result<Arc<dyn RemotePool>, String> = match row.kind.as_str() {
             "s3" => S3Pool::connect(S3Config {
                 endpoint: row.endpoint.clone(),
                 region: string(&row, "region"),
                 bucket: string(&row, "bucket"),
                 access_key: string(&row, "access_key"),
-                secret_key: row.secret.clone(),
+                secret_key: secret,
                 path_style: bool_of(&row, "path_style"),
             })
             .await
@@ -63,8 +65,9 @@ async fn connect_all(
                 host: row.endpoint.clone(),
                 port: u16::try_from(number(&row, "port")).unwrap_or(21),
                 user: string(&row, "user"),
-                password: row.secret.clone(),
+                password: secret,
                 root: string(&row, "root"),
+                secure: bool_of(&row, "secure"),
             })
             .await
             .map(|pool| Arc::new(pool) as Arc<dyn RemotePool>)

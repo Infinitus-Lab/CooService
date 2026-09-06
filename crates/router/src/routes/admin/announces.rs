@@ -70,28 +70,18 @@ async fn list(
     State(state): State<AppState>,
     Query(filter): Query<ListParams>,
 ) -> ApiResult<Vec<AnnounceView>> {
-    // 按 app 过滤 = 只看被该 app 引用的公告；app 不存在时结果为空
-    let app_name = match &filter.app_id {
+    // 按 app 过滤直接按 id 查引用关系（app.name 无唯一约束，按名字过滤会串台）
+    let rows = match &filter.app_id {
         Some(raw) => {
             let id = raw
                 .parse::<Uuid>()
                 .map_err(|e| AppError::BadRequest(format!("invalid app_id: {e}")))?;
-            repo::app::get(&state.db, id).await?.map(|row| row.name)
+            repo::announce::list_by_app(&state.db, id).await?
         }
-        None => None,
+        None => repo::announce::list_all(&state.db).await?,
     };
 
-    let rows = repo::announce::list_all(&state.db).await?;
-    Ok(ApiOk(
-        rows.into_iter()
-            .filter(|row| {
-                app_name
-                    .as_ref()
-                    .is_none_or(|name| row.ref_apps.iter().any(|app| app == name))
-            })
-            .map(AnnounceView::from_row)
-            .collect(),
-    ))
+    Ok(ApiOk(rows.into_iter().map(AnnounceView::from_row).collect()))
 }
 
 async fn create(

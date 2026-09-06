@@ -3,12 +3,25 @@
 use std::sync::Arc;
 
 use apps::manager::AppManager;
+use axum::extract::FromRef;
 use chrono::{DateTime, Utc};
 use dashmap::DashMap;
 use database::Database;
 use resource::{health::PoolHealth, local::LocalPool, pool::ResourcePool};
 
-use crate::pool_sync::PoolSync;
+use crate::{cache::PublicCache, pool_sync::PoolSync, ratelimit::RateLimiter};
+
+impl FromRef<AppState> for Arc<RateLimiter> {
+    fn from_ref(state: &AppState) -> Self {
+        state.rate_limiter.clone()
+    }
+}
+
+impl FromRef<AppState> for Arc<PublicCache> {
+    fn from_ref(state: &AppState) -> Self {
+        state.public_cache.clone()
+    }
+}
 
 /// 池的公开信息：下载 302 挑候选池时用；由 `routes/admin/pools.rs` 维护（create/modify 就地生效）。
 #[derive(Debug, Clone)]
@@ -38,6 +51,12 @@ pub struct AppState {
     pub db: Database,
     /// 管理接口密钥，每次启动随机生成
     pub admin_key: Arc<str>,
+    /// 上传请求体上限（字节），由路由装配层消费
+    pub request_max_upload_bytes: u64,
+    /// 公开端点短 TTL 缓存
+    pub public_cache: Arc<PublicCache>,
+    /// 公开端点每 IP 限流
+    pub rate_limiter: Arc<RateLimiter>,
 }
 
 impl AppState {
@@ -52,6 +71,9 @@ impl AppState {
         sync: Arc<PoolSync>,
         db: Database,
         admin_key: String,
+        request_max_upload_bytes: u64,
+        public_cache: Arc<PublicCache>,
+        rate_limiter: Arc<RateLimiter>,
     ) -> Self {
         Self {
             started_at: Utc::now(),
@@ -63,6 +85,9 @@ impl AppState {
             sync,
             db,
             admin_key: Arc::from(admin_key),
+            request_max_upload_bytes,
+            public_cache,
+            rate_limiter,
         }
     }
 }

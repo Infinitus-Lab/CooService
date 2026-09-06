@@ -87,12 +87,13 @@ impl PoolSync {
         })
     }
 
-    /// 启动后台引擎：先全扫描，然后监听变动事件做增量对账。
+    /// 启动后台引擎：先订阅变动事件再全扫描——扫描期间的变动先积压，扫描完随事件
+    /// 立即对账，不会出现"扫描后、订阅前"的窗口丢事件。
     pub fn spawn(self: &Arc<Self>) {
         let this = self.clone();
         tokio::spawn(async move {
-            let _ = this.full_scan().await;
             let mut rx = this.tx.subscribe();
+            let _ = this.full_scan().await;
             loop {
                 if rx.recv().await.is_ok() {
                     this.reconcile().await;
@@ -116,6 +117,12 @@ impl PoolSync {
 
     pub fn status(&self, pool_id: &str) -> Option<PoolSyncInfo> {
         self.states.get(pool_id).map(|entry| entry.value().clone())
+    }
+
+    /// 池被删除后清掉同步状态与实有集。
+    pub fn deregister(&self, pool_id: &str) {
+        self.states.remove(pool_id);
+        self.known.remove(pool_id);
     }
 
     /// 全扫描重建各池实有集并补齐缺失（模型见模块头）。返回各池状态。

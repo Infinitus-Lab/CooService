@@ -6,6 +6,7 @@
 //! `secret` 只在写请求里出现，任何响应都不回显。
 
 use std::collections::HashMap;
+use std::sync::Arc;
 
 use axum::{
     Json, Router,
@@ -21,7 +22,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
 use crate::{
-    ApiOk, ApiResult, AppError, pool_sync::PoolSyncStatus, response::with_status, state::AppState,
+    ApiOk, ApiResult, AppError, response::with_status, state::AppState,
 };
 
 pub fn router() -> Router<AppState> {
@@ -150,11 +151,10 @@ async fn create(
         .unwrap_or_else(|| Value::Object(Default::default()));
     validate_config(&body.kind, &config)?;
 
-    if body.is_public && body.public_endpoint.is_empty() {
-        return Err(AppError::BadRequest(
-            "is_public requires a non-empty public_endpoint".into(),
-        ));
-    }
+    validate_public_endpoint(&body.public_endpoint, body.is_public)?;
+
+    // 凭据加密落库（见 `resource::secret`）；未配置主密钥时明文直存并告警
+    let secret = resource::secret::encrypt_secret(&body.secret);
 
     repo::pool::insert(
         &state.db,
@@ -163,7 +163,7 @@ async fn create(
             kind: &body.kind,
             endpoint: &body.endpoint,
             public_endpoint: &body.public_endpoint,
-            secret: &body.secret,
+            secret: &secret,
             config: &config,
             is_public: body.is_public,
         },
@@ -215,13 +215,21 @@ async fn modify(
         validate_config(&row.kind, config)?;
     }
 
+    // 生效后的公开终结点与开关（含未改动的现值），统一校验 scheme 与组合约束
+    let effective_public = body.public_endpoint.as_deref().unwrap_or(&row.public_endpoint);
+    let effective_is_public = body.is_public.unwrap_or(row.is_public);
+    validate_public_endpoint(effective_public, effective_is_public)?;
+
+    // 凭据加密落库（`resource::secret`）；未配置主密钥时明文直存并告警
+    let secret = body.secret.as_deref().map(resource::secret::encrypt_secret);
+
     let updated = repo::pool::update(
         &state.db,
         &repo::pool::PoolUpdate {
             id: &id,
             endpoint: body.endpoint.as_deref(),
             public_endpoint: body.public_endpoint.as_deref(),
-            secret: body.secret.as_deref(),
+            secret: secret.as_deref(),
             config: body.config.as_ref(),
             is_public: body.is_public,
         },
@@ -252,30 +260,39 @@ async fn remove(Path(id): Path<String>, State(state): State<AppState>) -> ApiRes
         return Err(AppError::NotFound(id));
     }
 
+    // 库行删掉后清运行时残留：注册表、公开信息、健康探测、同步状态
+    state.resources.remove(&id);
+    state.pool_meta.remove(&id);
+    state.health.deregister(&id);
+    state.sync.deregister(&id);
+
     Ok(ApiOk(id))
 }
 
-/// 强制全扫描：重建各池的实有集并补齐缺失（同步引擎的真相是本地完整副本）。
-async fn scan(State(state): State<AppState>) -> ApiResult<HashMap<String, String>> {
-    let result = state
-        .sync
-        .full_scan()
-        .await
-        .map_err(|e| AppError::Internal(anyhow::Error::new(e)))?;
+/// 触发后台全扫描并立即返回：扫描可能远超请求超时窗口（池大时逐池 LIST + 推补缺失），
+/// 同步引擎会把结果写回各池状态，管理界面轮询 pools 列表即可看到进度。
+async fn scan(State(state): State<AppState>) -> Result<Response, AppError> {
+    let sync = Arc::clone(&state.sync);
+    tokio::spawn(async move {
+        if let Err(e) = sync.full_scan().await {
+            tracing::error!(error = %e, "background pool scan failed");
+        }
+    });
 
-    let view: HashMap<String, String> = result
+    let view: HashMap<String, String> = state
+        .resources
+        .ids()
         .into_iter()
-        .map(|(id, info)| {
-            (
-                id,
-                match info.status {
-                    PoolSyncStatus::Syncing => format!("syncing({})", info.pending),
-                    other => other.as_str().to_string(),
-                },
-            )
+        .map(|id| {
+            let status = state
+                .sync
+                .status(&id)
+                .map(|s| s.status.as_str().to_string())
+                .unwrap_or_else(|| "unknown".into());
+            (id, status)
         })
         .collect();
-    Ok(ApiOk(view))
+    Ok(with_status(StatusCode::ACCEPTED, view))
 }
 
 // ---------- 池成员管理（资源进池/出池是资源池的领域） ----------
@@ -323,8 +340,8 @@ async fn pool_add_resource(
     if repo::pool::get(&state.db, &id).await?.is_none() {
         return Err(AppError::NotFound(id));
     }
-    let sha256 = body.sha256.trim().to_lowercase();
-    resource::key::object_key(&sha256).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let sha256 = resource::key::normalize_sha256(&body.sha256)
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     let resource = repo::resource::get(&state.db, &sha256)
         .await?
@@ -340,7 +357,7 @@ async fn pool_add_resource(
         .get(&id)
         .ok_or_else(|| AppError::BadRequest(format!("pool {id:?} not connected")))?;
 
-    let key = resource::key::object_key(&sha256).expect("validated above");
+    let key = resource::key::object_key(&sha256).expect("normalized above");
     let mut reader = state
         .local
         .download_file(&key)
@@ -380,7 +397,8 @@ async fn pool_remove_resource(
     Path((id, sha256)): Path<(String, String)>,
     State(state): State<AppState>,
 ) -> ApiResult<String> {
-    resource::key::object_key(&sha256).map_err(|e| AppError::BadRequest(e.to_string()))?;
+    let sha256 = resource::key::normalize_sha256(&sha256)
+        .map_err(|e| AppError::BadRequest(e.to_string()))?;
 
     if !repo::resource::remove_location(&state.db, &sha256, &id).await? {
         return Err(AppError::NotFound(format!(
@@ -388,7 +406,7 @@ async fn pool_remove_resource(
         )));
     }
 
-    let key = resource::key::object_key(&sha256).expect("validated above");
+    let key = resource::key::object_key(&sha256).expect("normalized above");
     if let Some(pool) = state.resources.get(&id)
         && let Err(e) = pool.delete_file(&key).await
     {
@@ -406,6 +424,25 @@ fn validate_kind(kind: &str) -> Result<(), AppError> {
             "invalid pool kind {other:?}, expected s3 or ftp"
         ))),
     }
+}
+
+/// 公开终结点必须是 http/https URL；公开池（is_public）必须填（DB CHECK 同规则，这里提前 400）。
+fn validate_public_endpoint(endpoint: &str, is_public: bool) -> Result<(), AppError> {
+    if endpoint.is_empty() {
+        return if is_public {
+            Err(AppError::BadRequest(
+                "is_public requires a non-empty public_endpoint".into(),
+            ))
+        } else {
+            Ok(())
+        };
+    }
+    if !endpoint.starts_with("http://") && !endpoint.starts_with("https://") {
+        return Err(AppError::BadRequest(
+            "public_endpoint must start with http:// or https://".into(),
+        ));
+    }
+    Ok(())
 }
 
 /// 按 kind 校验 config 必填字段：s3 必须给 bucket/region/access_key（secret 是 secret key），

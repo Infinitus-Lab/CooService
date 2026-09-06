@@ -6,4 +6,11 @@
     root * /usr/share/caddy
     try_files {path} /index.html
     file_server
+
+    header {
+        # CSP：管理密钥存 sessionStorage，XSS 是唯一窃取途径——收紧脚本来源
+        Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self' http: https:; object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+    }
 }

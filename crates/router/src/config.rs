@@ -2,11 +2,15 @@
 
 use std::{env, net::SocketAddr, path::PathBuf, time::Duration};
 
+use crate::auth::{generate_admin_key, hex_encode};
+
 const DEFAULT_BIND_ADDR: &str = "127.0.0.1:8081";
 const DEFAULT_REQUEST_TIMEOUT_SECS: u64 = 30;
 const DEFAULT_LOCAL_RESOURCE_DIR: &str = "/data/resource";
 const DEFAULT_POOL_HEALTH_INTERVAL_SECS: u64 = 300;
 const DEFAULT_POOL_HEALTH_TIMEOUT_SECS: u64 = 10;
+const DEFAULT_MAX_UPLOAD_BYTES: u64 = 2 * 1024 * 1024 * 1024; // 2 GiB
+const DEFAULT_PUBLIC_RATE_LIMIT: u32 = 120; // 每 IP 每分钟请求数
 
 #[derive(Debug, Clone)]
 pub struct ServerConfig {
@@ -20,6 +24,14 @@ pub struct ServerConfig {
     pub pool_health_interval: Duration,
     /// 单次池探测超时，环境变量 `POOL_HEALTH_TIMEOUT_SECS`，默认 10s
     pub pool_health_timeout: Duration,
+    /// 上传请求体上限，环境变量 `MAX_UPLOAD_BYTES`，默认 2 GiB
+    pub max_upload_bytes: u64,
+    /// 公开端点每 IP 限流（次/分钟），环境变量 `PUBLIC_RATE_LIMIT`，默认 120
+    pub public_rate_limit: u32,
+    /// 管理密钥：`ADMIN_KEY` 未设置时随机生成（不可恢复，见 `auth` 模块头）
+    pub admin_key: String,
+    /// CORS 允许的 Origin 白名单（逗号分隔）；为空时放行全部（仅限内网开发）
+    pub cors_allowed_origins: Vec<String>,
 }
 
 impl ServerConfig {
@@ -29,36 +41,36 @@ impl ServerConfig {
             .parse()
             .map_err(|e| anyhow::anyhow!("invalid BIND_ADDR: {e}"))?;
 
-        let request_timeout = env::var("REQUEST_TIMEOUT_SECS")
-            .ok()
-            .map(|v| {
-                v.parse::<u64>()
-                    .map_err(|e| anyhow::anyhow!("invalid REQUEST_TIMEOUT_SECS: {e}"))
-            })
-            .transpose()?
+        let request_timeout = parse_env::<u64>("REQUEST_TIMEOUT_SECS")?
             .unwrap_or(DEFAULT_REQUEST_TIMEOUT_SECS);
-
         let local_resource_dir = env::var("LOCAL_RESOURCE_DIR")
             .map(PathBuf::from)
             .unwrap_or_else(|_| PathBuf::from(DEFAULT_LOCAL_RESOURCE_DIR));
 
-        let pool_health_interval = env::var("POOL_HEALTH_INTERVAL_SECS")
-            .ok()
-            .map(|v| {
-                v.parse::<u64>()
-                    .map_err(|e| anyhow::anyhow!("invalid POOL_HEALTH_INTERVAL_SECS: {e}"))
-            })
-            .transpose()?
-            .unwrap_or(DEFAULT_POOL_HEALTH_INTERVAL_SECS);
+        let pool_health_interval =
+            parse_env::<u64>("POOL_HEALTH_INTERVAL_SECS")?.unwrap_or(DEFAULT_POOL_HEALTH_INTERVAL_SECS);
+        let pool_health_timeout =
+            parse_env::<u64>("POOL_HEALTH_TIMEOUT_SECS")?.unwrap_or(DEFAULT_POOL_HEALTH_TIMEOUT_SECS);
 
-        let pool_health_timeout = env::var("POOL_HEALTH_TIMEOUT_SECS")
-            .ok()
-            .map(|v| {
-                v.parse::<u64>()
-                    .map_err(|e| anyhow::anyhow!("invalid POOL_HEALTH_TIMEOUT_SECS: {e}"))
-            })
-            .transpose()?
-            .unwrap_or(DEFAULT_POOL_HEALTH_TIMEOUT_SECS);
+        let max_upload_bytes = parse_env::<u64>("MAX_UPLOAD_BYTES")?.unwrap_or(DEFAULT_MAX_UPLOAD_BYTES);
+        let public_rate_limit =
+            parse_env::<u32>("PUBLIC_RATE_LIMIT")?.unwrap_or(DEFAULT_PUBLIC_RATE_LIMIT);
+
+        // 管理密钥：显式注入优先，未注入则随机生成（主密钥不可从日志取回）
+        let admin_key = match env::var("ADMIN_KEY").ok().filter(|s| !s.is_empty()) {
+            Some(key) => key,
+            None => {
+                let key = generate_admin_key();
+                tracing::warn!(
+                    "ADMIN_KEY not set, generated an ephemeral admin key (not recoverable); set ADMIN_KEY to persist access"
+                );
+                key
+            }
+        };
+
+        let cors_allowed_origins = env::var("CORS_ALLOWED_ORIGINS")
+            .map(|raw| raw.split(',').map(str::trim).filter(|s| !s.is_empty()).map(str::to_string).collect())
+            .unwrap_or_default();
 
         Ok(Self {
             bind_addr,
@@ -66,6 +78,10 @@ impl ServerConfig {
             local_resource_dir,
             pool_health_interval: Duration::from_secs(pool_health_interval),
             pool_health_timeout: Duration::from_secs(pool_health_timeout),
+            max_upload_bytes,
+            public_rate_limit,
+            admin_key,
+            cors_allowed_origins,
         })
     }
 }
@@ -80,6 +96,24 @@ impl Default for ServerConfig {
             local_resource_dir: PathBuf::from(DEFAULT_LOCAL_RESOURCE_DIR),
             pool_health_interval: Duration::from_secs(DEFAULT_POOL_HEALTH_INTERVAL_SECS),
             pool_health_timeout: Duration::from_secs(DEFAULT_POOL_HEALTH_TIMEOUT_SECS),
+            max_upload_bytes: DEFAULT_MAX_UPLOAD_BYTES,
+            public_rate_limit: DEFAULT_PUBLIC_RATE_LIMIT,
+            admin_key: hex_encode(&[0u8; 64]), // Only used in tests where auth isn't exercised
+            cors_allowed_origins: Vec::new(),
         }
     }
+}
+
+/// 变量不存在返回 `Ok(None)`，存在但解析失败返回 `Err`。
+fn parse_env<T: std::str::FromStr>(key: &str) -> anyhow::Result<Option<T>>
+where
+    T::Err: std::fmt::Display,
+{
+    env::var(key)
+        .ok()
+        .map(|v| {
+            v.parse::<T>()
+                .map_err(|e| anyhow::anyhow!("invalid {key}: {e}"))
+        })
+        .transpose()
 }

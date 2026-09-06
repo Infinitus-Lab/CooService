@@ -61,10 +61,12 @@ crates/
 | `endpoint` | 终结点 URL | 主机名 |
 | `public_endpoint` | 对外下载链接（302 目标） | 同左 |
 | `secret` | secret key | 密码 |
-| `config` | `{bucket, region, access_key, path_style}` | `{user, root, port}` |
+| `config` | `{bucket, region, access_key, path_style}` | `{user, root, port, secure}` |
 
 `config` 按 kind 校验（s3 缺 bucket/region/access_key、ftp 缺 user → 400），DB CHECK
-要求 JSON 对象、`is_public` 必须有非空 `public_endpoint`。
+要求 JSON 对象、`is_public` 必须有非空 `public_endpoint`；`public_endpoint` 必须是
+http/https URL（`routes/admin/pools.rs` 校验）。FTP `secure: true` 走显式 FTPS
+（AUTH TLS，凭据与内容加密过网）。
 
 ### 4.2 在线情况（resource crate）
 
@@ -101,8 +103,10 @@ crates/
 
 - 统一信封 `{code, message, data, timestamp}`；错误 `AppError` 语义化映射
   （400/401/404/409/502/503，`DatabaseError::Constraint` 23503/23505 → 409）
-- 管理接口：`/api/v1/admin` 整树 `X-Admin-Key`（每次启动随机 64 字节，
-  仅打印启动日志一次；**无登录页，401 才弹密钥门**）
+- 管理接口：`/api/v1/admin` 整树 `X-Admin-Key`。密钥来源：`ADMIN_KEY` 环境变量
+  （运维密管，`openssl rand -hex 64` 生成后注入）；未注入时每次启动随机生成且
+  **不打印完整密钥**（日志只有前 8 位指纹），此时无法从日志取回，正式部署必须显式注入。
+  无登录页，401 才弹密钥门
 - 客户端接口：通道/公告需 `X-App-Id`（只读）；更新信息按 guid 即可取
 - 管理路由统一放 `routes/admin/` 目录（目录头注释声明领域边界），
   公开接口在 `routes/{app,resources}.rs`，**不混写**
@@ -110,8 +114,8 @@ crates/
   `0001_init.sql`，后续从 `0002_` 递增
 - 路径无尾斜杠：`/api/v1/app/channels/`、`/announces/` 这种带 `/` 的请求 404
   （axum 不做斜杠重定向）；`/admin/apps/` 因 nest+`/` 反而兼容——客户端拼 URL 勿加尾斜杠
-- admin key 取法：启动日志 `admin key (X-Admin-Key)` 只印一次；命令
-  `podman logs coo-router | grep 'X-Admin-Key'`（docker compose 同理）
+- admin key 取法：`ADMIN_KEY=$(openssl rand -hex 64)` 写入宿主 .env 后
+  `docker compose up -d`，WebUI 密钥门粘贴同一值；日志只核对前 8 位指纹。
 
 ## 7. 部署拓扑
 
@@ -140,10 +144,15 @@ coo-web（caddy + anubis 预留）/ coo-api（pgsql + router）两个 internal �
 | `DATABASE_CONNECT_TIMEOUT_SECS` | 5 | 建连超时 |
 | `MIGRATIONS_DIR` | `migrations` | 迁移目录 |
 | `BIND_ADDR` | `127.0.0.1:8081` | 监听地址 |
-| `REQUEST_TIMEOUT_SECS` | 30 | 请求超时（全树统一，无流式豁免） |
+| `REQUEST_TIMEOUT_SECS` | 30 | 请求超时（全树统一，上传分支豁免，见 `router.rs`） |
 | `LOCAL_RESOURCE_DIR` | `/data/resource` | 本地完整副本 |
 | `POOL_HEALTH_INTERVAL_SECS` | 300 | 池健康探测周期 |
 | `POOL_HEALTH_TIMEOUT_SECS` | 10 | 单次探测超时 |
+| `ADMIN_KEY` | 随机生成 | 管理密钥；未注入则随机且不打印，见上 |
+| `STORAGE_SECRET_MASTER_KEY` | 无 | 池凭据 AES-256 主密钥（64 位 hex）；不配置则明文落库并告警 |
+| `MAX_UPLOAD_BYTES` | 2 GiB | 上传请求体上限（超出 413，慢链路不受请求超时约束） |
+| `PUBLIC_RATE_LIMIT` | 120 | 公开端点每 IP 每分钟限流 |
+| `CORS_ALLOWED_ORIGINS` | 空（放行全部） | 逗号分隔的 Origin 白名单 |
 | `RUST_LOG` | info | 日志级别 |
 
 ## 9. 前端（WebUI）
@@ -156,9 +165,11 @@ coo-web（caddy + anubis 预留）/ coo-api（pgsql + router）两个 internal �
 
 ## 10. 已知取舍（上线前复核）
 
-- `resource_pool.secret` 明文落库 → 生产前加密或外部密钥服务
+- `resource_pool.secret` 已支持 AES-256 静态加密（`STORAGE_SECRET_MASTER_KEY`）；
+  未配置主密钥时仍明文落库（兼容旧部署），生产必须配置
 - 管理列表无分页（alpha 量级；`channel(app_id, is_default, created_at)` 组合索引待需再补）
 - anubis 的 `X-Real-Ip` 来源待 cloudflared 方案（当前 caddy 临时直出 8082）
+- 公开端点限流是进程内固定窗口（每 IP 每分），精细限流 / 防分布式攻击仍应交网关
 
 ## 11. 注释与代码规范
 

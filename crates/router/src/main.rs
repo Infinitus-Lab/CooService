@@ -6,8 +6,14 @@ use apps::manager::AppManager;
 use database::{Database, DatabaseConfig};
 use resource::local::LocalPool;
 use router::{
-    AppState, ServerConfig, auth::generate_admin_key, build_router, pools::load_resource_pools,
+    AppState, ServerConfig, build_router, cache::PublicCache, pools::load_resource_pools,
+    ratelimit::RateLimiter,
 };
+
+/// 管理密钥前 8 位指纹：日志里只出现指纹，不出现完整密钥。
+fn fingerprint(key: &str) -> &str {
+    &key[..key.len().min(8)]
+}
 
 #[tokio::main]
 async fn main() {
@@ -48,7 +54,16 @@ async fn run() -> anyhow::Result<()> {
     // 池同步引擎需读 DB 的期望登记，按期放在 router 层
     let sync = router::pool_sync::PoolSync::new(db.clone(), resources.clone(), local.clone());
     sync.spawn();
-    let admin_key = generate_admin_key();
+    // 清理上次被杀进程残留的 tmp 临时文件（上传中断会留下 UUID 文件）
+    let tmp_dir = local.root().join("tmp");
+    if let Err(e) = tokio::fs::remove_dir_all(&tmp_dir).await
+        && e.kind() != std::io::ErrorKind::NotFound
+    {
+        tracing::warn!(error = %e, "cleanup stale tmp dir failed");
+    }
+    let admin_key = config.admin_key.clone();
+    let public_cache = Arc::new(PublicCache::new(std::time::Duration::from_secs(5)));
+    let rate_limiter = Arc::new(RateLimiter::new(config.public_rate_limit));
     let state = AppState::new(
         apps,
         resources,
@@ -58,17 +73,24 @@ async fn run() -> anyhow::Result<()> {
         sync,
         db,
         admin_key.clone(),
+        config.max_upload_bytes,
+        public_cache,
+        rate_limiter,
     );
-    let app = build_router(state, config.request_timeout);
+    let app =
+        build_router(state, config.request_timeout, config.cors_allowed_origins.clone());
 
     let listener = tokio::net::TcpListener::bind(config.bind_addr).await?;
     tracing::info!(addr = %config.bind_addr, "listening");
-    // 管理密钥不落盘，只在启动日志里出现一次
-    tracing::info!(%admin_key, "admin key (X-Admin-Key)");
+    // 只打前 8 位指纹用于区分实例；完整密钥必须走 ADMIN_KEY 环境变量
+    tracing::info!(fingerprint = %fingerprint(&admin_key), "admin key fingerprint (X-Admin-Key)");
 
-    axum::serve(listener, app)
-        .with_graceful_shutdown(shutdown_signal())
-        .await?;
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<std::net::SocketAddr>(),
+    )
+    .with_graceful_shutdown(shutdown_signal())
+    .await?;
 
     tracing::info!("server stopped");
     Ok(())

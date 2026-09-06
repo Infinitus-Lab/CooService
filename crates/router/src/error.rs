@@ -90,7 +90,14 @@ impl IntoResponse for AppError {
             tracing::debug!(error = %self, status = %status, "request rejected");
         }
 
-        (status, Json(Envelope::message(status, self.to_string()))).into_response()
+        // 5xx 的完整细节只进日志，响应体用固定文案，不把 DB 报错 / 内部路径外泄
+        let message = if status.is_server_error() {
+            "internal error".to_string()
+        } else {
+            self.to_string()
+        };
+
+        (status, Json(Envelope::message(status, message))).into_response()
     }
 }
 

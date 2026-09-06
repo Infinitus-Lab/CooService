@@ -11,10 +11,10 @@ pub mod pools;
 pub mod resources;
 
 use axum::{
-    Router, extract::State, http::StatusCode, middleware, response::IntoResponse, routing::post,
+    Router, extract::State, middleware, routing::post,
 };
 
-use crate::{auth::require_admin_key, pools::reload_resource_pools, state::AppState};
+use crate::{ApiOk, ApiResult, auth::require_admin_key, pools::reload_resource_pools, state::AppState};
 
 pub fn router(state: &AppState) -> Router<AppState> {
     Router::new()
@@ -31,31 +31,22 @@ pub fn router(state: &AppState) -> Router<AppState> {
         ))
 }
 
-/// 重扫 `app` 表与资源池，让外部改动生效；失败返回 500 并记日志。
-async fn reload(State(state): State<AppState>) -> impl IntoResponse {
+/// 重扫 `app` 表与资源池，让外部改动生效；部分失败返回 500 并记日志。
+async fn reload(State(state): State<AppState>) -> ApiResult<String> {
     if let Err(e) = state.apps.reload().await {
         tracing::error!(error = %e, "reload apps failed");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "reload failed".to_string(),
-        );
+        return Err(crate::AppError::Internal(anyhow::anyhow!("reload apps failed: {e}")));
     }
     if let Err(e) = reload_resource_pools(&state.resources, &state.pool_meta, &state.db).await {
         tracing::error!(error = %e, "reload pools failed");
-        return (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "reload failed".to_string(),
-        );
+        return Err(crate::AppError::Internal(anyhow::anyhow!("reload pools failed: {e}")));
     }
     // reload 后新池重新注册，让同步引擎补上实有集
     state.sync.notify();
 
-    (
-        StatusCode::OK,
-        format!(
-            "reloaded {} apps, {} pools",
-            state.apps.count(),
-            state.resources.count()
-        ),
-    )
+    Ok(ApiOk(format!(
+        "reloaded {} apps, {} pools",
+        state.apps.count(),
+        state.resources.count()
+    )))
 }

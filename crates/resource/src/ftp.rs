@@ -11,7 +11,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 use async_trait::async_trait;
 use chrono::{DateTime, Utc};
 use suppaftp::list::{ListParser, ParseResult};
-use suppaftp::tokio::AsyncFtpStream;
+use suppaftp::tokio::{AsyncNativeTlsConnector, AsyncNativeTlsFtpStream};
 use suppaftp::types::FileType;
 use tokio::io::{AsyncRead, AsyncWriteExt, duplex};
 use tokio::sync::Mutex;
@@ -32,18 +32,28 @@ pub struct FtpConfig {
     pub password: String,
     /// 池根路径，所有操作相对它
     pub root: String,
+    /// true 时用显式 FTPS（AUTH TLS），凭据与内容都走加密通道
+    pub secure: bool,
 }
 
 /// 一个 FTP 池：整池共用一条控制连接，操作串行化。
+///
+/// 流类型固定用 TLS 变体（`AsyncNativeTlsFtpStream`）：not secure 时它只是普通 TCP
+/// 传输（suppaftp 只在 `into_secure` 后才走 TLS），这样 secure 开关不改变结构体类型。
 pub struct FtpPool {
     root: String,
-    stream: Arc<Mutex<AsyncFtpStream>>,
+    stream: Arc<Mutex<AsyncNativeTlsFtpStream>>,
 }
 
 impl FtpPool {
     /// 建连、登录、切二进制模式，并校验一次根目录列表。
     pub async fn connect(config: FtpConfig) -> Result<Self, PoolError> {
-        let mut stream = AsyncFtpStream::connect((config.host.as_str(), config.port)).await?;
+        let mut stream = AsyncNativeTlsFtpStream::connect((config.host.as_str(), config.port)).await?;
+        if config.secure {
+            let connector =
+                AsyncNativeTlsConnector::from(suppaftp::async_native_tls::TlsConnector::new());
+            stream = stream.into_secure(connector, &config.host).await?;
+        }
         stream.login(&config.user, &config.password).await?;
         stream.transfer_type(FileType::Binary).await?;
 

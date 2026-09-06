@@ -72,6 +72,12 @@ impl PoolHealth {
         self.table.get(id).map(|entry| entry.value().clone())
     }
 
+    /// 池被删除后清掉状态，避免探测与展示残留。
+    pub fn deregister(&self, id: &str) {
+        self.seen.remove(id);
+        self.table.remove(id);
+    }
+
     async fn probe(&self, pools: &ResourcePool, id: &str) {
         let Some(pool) = pools.get(id) else {
             return;

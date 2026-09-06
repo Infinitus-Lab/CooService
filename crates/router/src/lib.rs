@@ -4,11 +4,13 @@
 //! → `router` 装配路由树与中间件；错误与响应分别走 `error` / `response`。
 
 pub mod auth;
+pub mod cache;
 pub mod config;
 pub mod error;
 pub mod extract;
 pub mod pool_sync;
 pub mod pools;
+pub mod ratelimit;
 pub mod response;
 pub mod router;
 pub mod routes;

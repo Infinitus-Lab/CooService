@@ -114,7 +114,7 @@ export default function PoolsPage({ client }: { client: ApiClient }) {
                 }
               }}
             >
-              {scanning ? '扫描中…' : '强制扫描'}
+              {scanning ? '触发中…' : '强制扫描'}
             </button>
             <button className="btn btn-sm btn-primary" onClick={() => setCreating(true)}>
               新建资源池

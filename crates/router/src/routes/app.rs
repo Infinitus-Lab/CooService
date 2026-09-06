@@ -12,6 +12,7 @@ use uuid::Uuid;
 
 use crate::{ApiOk, ApiResult, AppError, extract::AppId, state::AppState};
 
+/// 公开只读端点：限流层在装配层挂（`crate::router`），本函数只声明路由。
 pub fn router() -> Router<AppState> {
     Router::new()
         .route("/channels", get(list_channels))
@@ -52,10 +53,14 @@ pub struct UpdateView {
 async fn list_channels(
     AppId(app_id): AppId,
     State(state): State<AppState>,
-) -> ApiResult<Vec<ChannelView>> {
+) -> ApiResult<serde_json::Value> {
+    let cache_key = format!("channels:{app_id}");
+    if let Some(cached) = state.public_cache.get(&cache_key) {
+        return Ok(ApiOk(cached));
+    }
     let channels = state.apps.channels(app_id).await?;
 
-    Ok(ApiOk(
+    let value = serde_json::to_value(
         channels
             .into_iter()
             .map(|channel| ChannelView {
@@ -66,18 +71,26 @@ async fn list_channels(
                 raw_size: channel.raw_size,
                 is_default: channel.is_default,
             })
-            .collect(),
-    ))
+            .collect::<Vec<_>>(),
+    )
+    .expect("view is serializable");
+    state.public_cache.insert(cache_key, value.clone());
+    Ok(ApiOk(value))
 }
 
 /// 自己解析 guid，用 `Path<Uuid>` 的话解析失败会落到 axum 默认拒绝，返回纯文本而非统一信封。
 async fn get_update(
     Path(guid): Path<String>,
     State(state): State<AppState>,
-) -> ApiResult<UpdateView> {
+) -> ApiResult<serde_json::Value> {
     let guid: Uuid = guid
         .parse()
         .map_err(|_| AppError::BadRequest(format!("invalid channel guid: {guid}")))?;
+
+    let cache_key = format!("update:{guid}");
+    if let Some(cached) = state.public_cache.get(&cache_key) {
+        return Ok(ApiOk(cached));
+    }
 
     let update = state
         .apps
@@ -85,7 +98,7 @@ async fn get_update(
         .await?
         .ok_or_else(|| AppError::NotFound(format!("channel {guid}")))?;
 
-    Ok(ApiOk(UpdateView {
+    let value = serde_json::to_value(UpdateView {
         guid: update.channel.guid,
         tag_name: update.channel.tag_name,
         version: update.channel.latest_version,
@@ -101,7 +114,10 @@ async fn get_update(
                 size: diff.size,
             })
             .collect(),
-    }))
+    })
+    .expect("view is serializable");
+    state.public_cache.insert(cache_key, value.clone());
+    Ok(ApiOk(value))
 }
 
 // ---------- 公告（客户端只读） ----------
@@ -122,15 +138,20 @@ pub struct AnnounceView {
 async fn list_announces(
     AppId(app_id): AppId,
     State(state): State<AppState>,
-) -> ApiResult<Vec<AnnounceView>> {
+) -> ApiResult<serde_json::Value> {
     // 与 channels 一致：app 不存在或已禁用时 404
     if state.apps.get(app_id).is_none() {
         return Err(AppError::NotFound(app_id.to_string()));
     }
 
+    let cache_key = format!("announces:{app_id}");
+    if let Some(cached) = state.public_cache.get(&cache_key) {
+        return Ok(ApiOk(cached));
+    }
+
     // 客户端只看当前可见的：起点已到、终点未过（NULL 边不限）
     let rows = repo::announce::list_visible_by_app(&state.db, app_id).await?;
-    Ok(ApiOk(
+    let value = serde_json::to_value(
         rows.into_iter()
             .map(|row| AnnounceView {
                 guid: row.guid,
@@ -141,6 +162,9 @@ async fn list_announces(
                 created_at: row.created_at,
                 updated_at: row.updated_at,
             })
-            .collect(),
-    ))
+            .collect::<Vec<_>>(),
+    )
+    .expect("view is serializable");
+    state.public_cache.insert(cache_key, value.clone());
+    Ok(ApiOk(value))
 }

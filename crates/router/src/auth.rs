@@ -1,6 +1,8 @@
 //! 管理接口鉴权。
 //!
-//! 密钥每次启动随机生成，只记在日志里，不落盘、不进数据库。
+//! 密钥来源：`ADMIN_KEY` 环境变量（运维密管，可持久化）。未设置时每次启动
+//! 随机生成 64 字节密钥——注意该密钥**不会**完整打印，仅打前 8 位指纹，运维
+//! 无法从日志取回，正式部署必须显式注入 `ADMIN_KEY`。
 
 use axum::{
     extract::{Request, State},
@@ -45,15 +47,15 @@ pub async fn require_admin_key(
     }
 }
 
-/// 定长比较：不因首字节不同就提前返回，避免用响应时间逐字节猜密钥。
+/// 定长比较：长度差异与逐字节差异都折进同一个累计值，比较耗时与内容无关，
+/// 不因首字节不同就提前返回（响应时间无法泄露任何比特信息）。
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {
-    if left.len() != right.len() {
-        return false;
-    }
-
-    let mut diff = 0u8;
-    for (a, b) in left.iter().zip(right) {
-        diff |= a ^ b;
+    let mut diff = left.len() ^ right.len();
+    let max = left.len().max(right.len());
+    for i in 0..max {
+        let l = left.get(i).copied().unwrap_or(0);
+        let r = right.get(i).copied().unwrap_or(0);
+        diff |= (l ^ r) as usize;
     }
     diff == 0
 }
