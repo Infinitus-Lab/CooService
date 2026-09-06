@@ -115,7 +115,7 @@ http/https URL（`routes/admin/pools.rs` 校验）。FTP `secure: true` 走显�
   `0001_init.sql`，后续从 `0002_` 递增
 - 路径无尾斜杠：`/api/v1/app/channels/`、`/announces/` 这种带 `/` 的请求 404
   （axum 不做斜杠重定向）；`/admin/apps/` 因 nest+`/` 反而兼容——客户端拼 URL 勿加尾斜杠
-- admin key 取法：`ADMIN_KEY=$(openssl rand -hex 64)` 写入宿主 .env 后
+- admin key 取法：`openssl rand -hex 64` 填入 `environment` 的 `ADMIN_KEY` 后
   `docker compose up -d`，WebUI 密钥门粘贴同一值；日志只核对前 8 位指纹。
 
 ## 7. 部署拓扑
@@ -126,19 +126,24 @@ http/https URL（`routes/admin/pools.rs` 校验）。FTP `secure: true` 走显�
 coo-web（caddy + anubis 预留）/ coo-api（pgsql + router）两个 internal 网络，完全隔离无桥接
 ```
 
-- `compose.yml`：服务结构 + 固定配置；部署环境变量在 `compose.override.yml` 实例化
-  （compose 自动合并加载），敏感值从宿主 `.env` 注入（模板 `.env.example`）。
+- 预构建镜像发布：`.github/workflows/docker-publish.yml` 构建 `cooservice`（API）
+  与 `cooservice-web`（WebUI）两个镜像推 GHCR，release 触发或手动 dispatch；
+  WebUI 镜像构建期的 `VITE_BASE_API` 来自手动输入或仓库变量 `WEB_BASE_API`
+- `compose.yml`：全部 `image:` 拉取预构建镜像；部署变量集中在 `environment` 文件
+  （Weblate 风格，分节注释、可选变量注释留档），compose 经 `env_file` 读取。
   `coo-pgsql`（不发布端口）+ `coo-router`（127.0.0.1:8081
   + `./data/resource:/data/resource:U,z` 本地副本，启动时校验可写）+ 临时直出 caddy
   （anubis 待 cloudflared IP 方案恢复）——见 compose 注释
-- WebUI 构建期注入 `VITE_BASE_API`（默认 `http://127.0.0.1:8081`）；跨域由
-  router 的 permissive CORS 放行
+- 跨域由 router 的 CORS 配置放行（environment 的 `CORS_ALLOWED_ORIGINS`，默认放行全部）
 - podman 坑：`up -d` 不因镜像重建而重建容器（需 `--force-recreate`）；
 - 卷重建：改 `POSTGRES_PASSWORD` 后若 `pgdata` 卷还在则密码不生效，需先
   `podman volume rm pgdata`（或 `down -v`）再 `up -d`；`data/resource` 是资源唯一真相，删卷即丢全部资源
   bind 挂载受 SELinux 管（容器内交互用 stdin/`--entrypoint`），测试产物只放 `data/`
 
 ## 8. 环境变量
+
+部署侧变量见 `environment` 文件（env_file 注入）；下表是 router 进程内可用的全部变量，
+`environment` 里有对应行的为部署可改，其余是固定/构建期值：
 
 | 变量 | 默认 | 用途 |
 |---|---|---|

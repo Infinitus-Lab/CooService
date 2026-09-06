@@ -1,0 +1,22 @@
+# CooService 部署变量：docker compose 通过 env_file 读取本文件（compose.yml），
+# 部署前按需修改；注释掉的为可选变量，取消注释即启用。
+
+# ===== 数据库 =====
+# router 的 DATABASE_URL 直接内嵌连接串，改密码时两处要同步（本文件末尾）
+POSTGRES_USER=cooservice
+POSTGRES_PASSWORD=change-me
+POSTGRES_DB=cooservice
+
+# ===== API 服务 =====
+# 管理密钥：openssl rand -hex 64 生成；留空则服务每次启动随机生成，且日志只打 8 位指纹、无法取回
+ADMIN_KEY=
+# 资源池凭据主密钥：openssl rand -hex 32 生成；留空则 S3/FTP 密码明文落库
+STORAGE_SECRET_MASTER_KEY=
+DATABASE_URL=postgresql://cooservice:change-me@coo-pgsql:5432/cooservice
+
+# ===== 可选 =====
+#CORS_ALLOWED_ORIGINS=https://example.com          # Origin 白名单，逗号分隔；留空=放行全部（仅内网）
+#MAX_UPLOAD_BYTES=2147483648                       # 上传请求体上限（字节）
+#PUBLIC_RATE_LIMIT=120                             # 公开端点每 IP 每分钟限流
+#TRUST_X_FORWARDED_FOR=0                           # 挂可信反代后置 1，限流按 X-Forwarded-For 计客户端 IP
+#RUST_LOG=info                                     # 日志级别

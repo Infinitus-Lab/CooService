@@ -1,6 +1,8 @@
-# 构建并发布 Docker 镜像到 GitHub Packages（ghcr.io）。
-# 镜像名与仓库同名：ghcr.io/OWNER/COOSERVICE（GHCR 全小写，metadata-action 自动小写）。
+# 构建并发布 Docker 镜像到 GitHub Packages（ghcr.io），供 compose 预构建部署：
+#   ghcr.io/OWNER/COOSERVICE       API 服务（Containerfile）
+#   ghcr.io/OWNER/COOSERVICE-WEB   WebUI / caddy 静态托管（Containerfile.web）
 # 触发：发 release 即发布；也可 workflow_dispatch 手动发布当前分支。
+# WebUI 的 API 域名在构建期注入：手动触发用输入，release 触发用仓库变量 WEB_BASE_API。
 
 name: Publish Docker image
 
@@ -8,6 +10,12 @@ on:
   release:
     types: [published]
   workflow_dispatch:
+    inputs:
+      web_base_api:
+        description: WebUI 镜像构建期注入的 API 域名（如 https://api.example.com），留空则同源
+        required: false
+        type: string
+        default: ""
 
 env:
   REGISTRY: ghcr.io
@@ -32,28 +40,54 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # 按事件自动生成 tag/label：release 给 semver + latest，手动触发给分支名 + latest
-      - name: Extract metadata (tags, labels) for Docker
-        id: meta
+      - name: Resolve WebUI API base
+        run: echo "WEB_BASE_API=${{ inputs.web_base_api || vars.WEB_BASE_API }}" >> "$GITHUB_ENV"
+
+      # 两个镜像各自生成 tag/label：release 给 semver + latest，手动触发给分支名 + latest
+      - name: Extract metadata for API image
+        id: meta-router
         uses: docker/metadata-action@v5
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
 
-      # 本仓库的 Dockerfile 叫 Containerfile（构建 router 镜像，见文件头注释）
-      - name: Build and push Docker image
-        id: push
+      - name: Extract metadata for WebUI image
+        id: meta-web
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-web
+
+      - name: Build and push API image
+        id: push-router
         uses: docker/build-push-action@v6
         with:
           context: .
           file: ./Containerfile
           push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          tags: ${{ steps.meta-router.outputs.tags }}
+          labels: ${{ steps.meta-router.outputs.labels }}
+
+      - name: Build and push WebUI image
+        id: push-web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: ./Containerfile.web
+          push: true
+          build-args: VITE_BASE_API=${{ env.WEB_BASE_API }}
+          tags: ${{ steps.meta-web.outputs.tags }}
+          labels: ${{ steps.meta-web.outputs.labels }}
 
       # 产物溯源声明：证明镜像由本仓库的这次构建产生（供应链安全）
       - name: Generate artifact attestation
         uses: actions/attest@v4
         with:
           subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
-          subject-digest: ${{ steps.push.outputs.digest }}
+          subject-digest: ${{ steps.push-router.outputs.digest }}
+          push-to-registry: true
+
+      - name: Generate artifact attestation
+        uses: actions/attest@v4
+        with:
+          subject-name: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}-web
+          subject-digest: ${{ steps.push-web.outputs.digest }}
           push-to-registry: true

@@ -1,41 +1,37 @@
-# podman-compose up -d --build（或 docker compose up -d --build）
+# podman-compose up -d（或 docker compose up -d）
+#
+# 全部镜像用 GHCR 预构建（发布工作流见 .github/workflows/docker-publish.yml）：
+#   cooservice       API 服务（Containerfile）
+#   cooservice-web   WebUI / caddy 静态托管（Containerfile.web）
+# 部署变量集中在同目录 environment 文件（Weblate 风格），改完直接 up。
 #
 # 拓扑：coo-web（anubis + caddy，internal 无出网）/ coo-api（pgsql + router，
 # internal，pgsql 不发布端口）/ coo-egress（仅 router 出网到 S3/FTP）。
-# 浏览器走 8082 anubis 进 WebUI；游戏客户端与管理接口直连 8081 的 API（绕过 anubis）。
-#
-# 部署环境变量在 compose.override.yml 实例化（敏感值经宿主 .env 注入，模板见 .env.example）。
+# 浏览器走 8082 anubis 进 WebUI；游戏客户端与管理接口直连 8081 API（绕过 anubis）。
 
 services:
   coo-pgsql:
-    container_name: coo-pgsql
     image: docker.io/library/postgres:16-alpine
-    environment:
-      POSTGRES_USER: cooservice
-      POSTGRES_DB: cooservice
+    container_name: coo-pgsql
+    env_file: ./environment
     networks:
       - coo-api
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
+      # -U 与 environment 的 POSTGRES_USER 保持一致
       test: ["CMD-SHELL", "pg_isready -U cooservice -d cooservice"]
       interval: 5s
       timeout: 3s
       retries: 10
 
   coo-router:
+    image: ghcr.io/infinitus-lab/cooservice:latest
     container_name: coo-router
-    build:
-      context: .
-      dockerfile: Containerfile
+    env_file: ./environment
     depends_on:
       coo-pgsql:
         condition: service_healthy
-    environment:
-      RUST_LOG: info
-      BIND_ADDR: 0.0.0.0:8081
-      MIGRATIONS_DIR: /migrations
-      LOCAL_RESOURCE_DIR: /data/resource
     networks:
       - coo-api
       - coo-egress
@@ -48,7 +44,6 @@ services:
     restart: unless-stopped
 
   anubis:
-    container_name: coo-anubis
     image: ghcr.io/techarohq/anubis:latest
     pull_policy: always
     restart: unless-stopped
@@ -69,10 +64,8 @@ services:
       - coo-web
 
   caddy:
+    image: ghcr.io/infinitus-lab/cooservice-web:latest
     container_name: coo-caddy
-    build:
-      context: .
-      dockerfile: Containerfile.web
     restart: unless-stopped
     # 无对外端口：只被 coo-web 内网的 anubis 转发访问
     networks:
