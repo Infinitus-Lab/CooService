@@ -1,0 +1,25 @@
+# 部署实例：docker/podman compose 自动与 compose.yml 合并加载。
+# 敏感值从宿主 .env 注入（模板见 .env.example）；未设的键走注释列出的默认行为。
+
+services:
+  coo-pgsql:
+    environment:
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}
+
+  coo-router:
+    environment:
+      # 管理密钥：openssl rand -hex 64 生成；不注入则服务随机生成且不打印（日志仅 8 位指纹，无法取回）
+      ADMIN_KEY: ${ADMIN_KEY:-}
+      # 池凭据主密钥：openssl rand -hex 32；不配置则池密钥明文落库并告警
+      STORAGE_SECRET_MASTER_KEY: ${STORAGE_SECRET_MASTER_KEY:-}
+      DATABASE_URL: postgresql://cooservice:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set in .env}@coo-pgsql:5432/cooservice
+      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
+      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-2147483648}
+      PUBLIC_RATE_LIMIT: ${PUBLIC_RATE_LIMIT:-120}
+      # 挂可信反代（cloudflare 等）后置 1：限流按 X-Forwarded-For 计客户端 IP，否则全局限流到代理 IP
+      TRUST_X_FORWARDED_FOR: ${TRUST_X_FORWARDED_FOR:-0}
+
+  caddy:
+    build:
+      args:
+        VITE_BASE_API: ${VITE_BASE_API:-http://127.0.0.1:8081}

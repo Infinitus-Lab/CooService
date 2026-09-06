@@ -126,7 +126,9 @@ http/https URL（`routes/admin/pools.rs` 校验）。FTP `secure: true` 走显�
 coo-web（caddy + anubis 预留）/ coo-api（pgsql + router）两个 internal 网络，完全隔离无桥接
 ```
 
-- `compose.yml`：`coo-pgsql`（不发布端口）+ `coo-router`（127.0.0.1:8081
+- `compose.yml`：服务结构 + 固定配置；部署环境变量在 `compose.override.yml` 实例化
+  （compose 自动合并加载），敏感值从宿主 `.env` 注入（模板 `.env.example`）。
+  `coo-pgsql`（不发布端口）+ `coo-router`（127.0.0.1:8081
   + `./data/resource:/data/resource:U,z` 本地副本，启动时校验可写）+ 临时直出 caddy
   （anubis 待 cloudflared IP 方案恢复）——见 compose 注释
 - WebUI 构建期注入 `VITE_BASE_API`（默认 `http://127.0.0.1:8081`）；跨域由

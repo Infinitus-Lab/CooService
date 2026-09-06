@@ -1,21 +1,10 @@
-# podman-compose up -d --build      （或 docker compose up -d --build）
+# podman-compose up -d --build（或 docker compose up -d --build）
 #
-# 拓扑：
+# 拓扑：coo-web（anubis + caddy，internal 无出网）/ coo-api（pgsql + router，
+# internal，pgsql 不发布端口）/ coo-egress（仅 router 出网到 S3/FTP）。
+# 浏览器走 8082 anubis 进 WebUI；游戏客户端与管理接口直连 8081 的 API（绕过 anubis）。
 #
-#   浏览器 ─ 8082 ─► anubis（人机验证）──► caddy（只托管 WebUI 静态文件）
-#                          coo-web 网络
-#
-#   游戏客户端 / 管理工具 / WebUI ─► coo-router 的 8081（coo-api 网络，直连）
-#
-# 网络：
-#   · coo-web（anubis + caddy）：internal，无出网
-#   · coo-api（pgsql + router）：internal，pgsql 不发布端口
-#   · coo-egress（仅 router）：出网到外部存储池终结点（S3/FTP 健康探测与同步 push）
-# WebUI 通过构建期 VITE_BASE_API 指向 API 域名（跨域由 router 的
-# permissive CORS 放行），API 域名在生产上由运维在外面挂 TLS / 反代。
-#
-# 注意：API 不走 anubis。anubis 的 PoW 挑战会挡掉非浏览器客户端，
-# 游戏客户端与管理接口直连 router 的 8081，这才是对外发布路径。
+# 部署环境变量在 compose.override.yml 实例化（敏感值经宿主 .env 注入，模板见 .env.example）。
 
 services:
   coo-pgsql:
@@ -23,7 +12,6 @@ services:
     image: docker.io/library/postgres:16-alpine
     environment:
       POSTGRES_USER: cooservice
-      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}
       POSTGRES_DB: cooservice
     networks:
       - coo-api
@@ -46,34 +34,16 @@ services:
     environment:
       RUST_LOG: info
       BIND_ADDR: 0.0.0.0:8081
-      # 管理密钥建议注入：`openssl rand -hex 64` 生成后写入宿主 .env；
-      # 不注入则由服务随机生成且不打印（日志里只有前 8 位指纹），届时无从取回。
-      ADMIN_KEY: ${ADMIN_KEY:-}
-      # 池凭据主密钥（32 字节 = 64 位 hex）；不配置则池密钥明文落库并告警
-      STORAGE_SECRET_MASTER_KEY: ${STORAGE_SECRET_MASTER_KEY:-}
-      DATABASE_URL: postgresql://cooservice:${POSTGRES_PASSWORD:?POSTGRES_PASSWORD must be set}@coo-pgsql:5432/cooservice
       MIGRATIONS_DIR: /migrations
       LOCAL_RESOURCE_DIR: /data/resource
-      # 公开端点不限的 Origin 白名单（逗号分隔）；默认空 = 放行全部（仅内网开发）
-      CORS_ALLOWED_ORIGINS: ${CORS_ALLOWED_ORIGINS:-}
-      MAX_UPLOAD_BYTES: ${MAX_UPLOAD_BYTES:-2147483648}
-      PUBLIC_RATE_LIMIT: ${PUBLIC_RATE_LIMIT:-120}
-      # 挂可信反代（cloudflare 等）后置 1，限流按 X-Forwarded-For 计客户端 IP
-      TRUST_X_FORWARDED_FOR: ${TRUST_X_FORWARDED_FOR:-0}
     networks:
       - coo-api
       - coo-egress
     ports:
-      # 对外 API 入口：游戏客户端 / 管理接口 / 资源下载都走这里（绕过 anubis）
       - "127.0.0.1:8081:8081"
     volumes:
-      # 本地完整副本：每个资源都有一份，是入池与同步推池的唯一推送源。
-      #
-      # :U 将宿主目录属主改为容器用户（65532）；:z（小写）打共享
-      # container_file_t 标签——不带私有 SELinux 类别，容器重建后仍可写
-      # （:Z 为单容器私有标签，重建即失效，禁止使用）。
-      # 宿主侧修改文件需经 podman unshare；若标签被 restorecon 重置，
-      # 重建容器即可重打标签。
+      # 本地完整副本：入池与同步推池的唯一推送源。
+      # :U 改宿主目录属主为容器用户；:z 打共享 SELinux 标签（重建后可写）
       - ./data/resource:/data/resource:U,z
     restart: unless-stopped
 
@@ -83,22 +53,16 @@ services:
     pull_policy: always
     restart: unless-stopped
     environment:
-      # anubis 在容器内监听 8082
       BIND: ":8082"
-      # 验证通过后转发给同一网络里的 caddy
       TARGET: "http://caddy:80"
-      # 本地直连：以连接源地址为客户端 IP（无外部反代注入 X-Real-Ip）。
-      # 日后经云端反代（cloudflared）则去掉此项，由反代注入 X-Real-Ip
+      # 本地直连取源 IP 作客户端地址；挂 cloudflared 反代后删此项，由反代注入 X-Real-Ip
       USE_REMOTE_ADDRESS: "true"
-      # 可调参数（默认 difficulty=4）：DIFFICULTY: "4"
     healthcheck:
       test: ["CMD", "anubis", "--healthcheck"]
       interval: 5s
       timeout: 30s
       retries: 5
       start_period: 500ms
-    # 浏览器入口：PoW 挑战后转发 caddy（TARGET）。本地直连时容器见到的
-    # 源 IP 即客户端 IP；日后经云端反代（cloudflared）时由反代注入 X-Real-Ip
     ports:
       - "127.0.0.1:8082:8082"
     networks:
@@ -109,11 +73,8 @@ services:
     build:
       context: .
       dockerfile: Containerfile.web
-      args:
-        # 构建期注入 API 域名；默认指本地 8081，生产请改成实际域名
-        VITE_BASE_API: ${VITE_BASE_API:-http://127.0.0.1:8081}
     restart: unless-stopped
-    # 无对外端口：只被 coo-web 内网的 anubis 转发访问（TARGET: http://caddy:80）
+    # 无对外端口：只被 coo-web 内网的 anubis 转发访问
     networks:
       - coo-web
 
@@ -124,7 +85,7 @@ networks:
   coo-api:
     name: coo-api
     internal: true
-  # 仅 router 加入：出网访问外部存储池终结点（S3/FTP）
+  # 仅 router 加入：出网访问外部存储池终结点
   coo-egress:
     name: coo-egress
 
