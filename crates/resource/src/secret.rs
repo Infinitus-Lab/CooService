@@ -31,7 +31,10 @@ fn master_key() -> Option<&'static Key<Aes256Gcm>> {
                 return None;
             };
             match decode_hex(&raw) {
-                Ok(key) if key.len() == 32 => Some(*Key::<Aes256Gcm>::from_slice(&key)),
+                Ok(key) if key.len() == 32
+                    && let Ok(parsed_key) = Key::<Aes256Gcm>::try_from(key.as_slice()) => {
+                        Some(parsed_key)
+                    },
                 Ok(_) => {
                     tracing::error!(
                         "STORAGE_SECRET_MASTER_KEY must be 64 hex chars (32 bytes), falling back to plaintext"
@@ -60,11 +63,11 @@ pub fn encrypt_secret(plain: &str) -> String {
     SysRng
         .try_fill_bytes(&mut nonce_bytes)
         .expect("os rng unavailable");
-    let nonce = Nonce::from_slice(&nonce_bytes);
+    let nonce = Nonce::try_from(nonce_bytes).expect("unable to generate nonce");
 
     // 随机 nonce：同一明文每次密文不同。`secret` 从不参与 WHERE 查询，非确定性无副作用。
     let ciphertext = cipher
-        .encrypt(nonce, plain.as_bytes())
+        .encrypt(&nonce, plain.as_bytes())
         .expect("aes-gcm encrypt with fixed-size key cannot fail");
 
     let mut payload = Vec::with_capacity(NONCE_LEN + ciphertext.len());
@@ -93,7 +96,8 @@ pub fn decrypt_secret(stored: &str) -> String {
 
     let (nonce_bytes, ciphertext) = payload.split_at(NONCE_LEN);
     let cipher = Aes256Gcm::new(key);
-    match cipher.decrypt(Nonce::from_slice(nonce_bytes), ciphertext) {
+    let nonce = Nonce::try_from(nonce_bytes).expect("Unable to got nonce");
+    match cipher.decrypt(&nonce, ciphertext) {
         Ok(plain) => String::from_utf8(plain).unwrap_or_else(|_| stored.to_string()),
         // 主密钥轮换后旧密文解不开，原样返回（建连失败会暴露，属运维事件）
         Err(_) => stored.to_string(),

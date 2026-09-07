@@ -12,6 +12,7 @@ axum = { workspace = true }
 tower = { workspace = true }
 tower-http = { workspace = true }
 http-body-util = "0.1"
+tikv-jemallocator = { workspace = true }
 
 # Error handling
 thiserror = { workspace = true }

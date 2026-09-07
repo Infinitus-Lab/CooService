@@ -9,6 +9,12 @@ use router::{
     AppState, ServerConfig, build_router, cache::PublicCache, pools::load_resource_pools,
     ratelimit::RateLimiter,
 };
+#[cfg(not(target_env = "msvc"))]
+use tikv_jemallocator::Jemalloc;
+
+#[cfg(not(target_env = "msvc"))]
+#[global_allocator]
+static GLOBAL: Jemalloc = Jemalloc;
 
 /// 公开接口缓存 TTL：几秒级，写操作最多延迟这么多时间可见。
 const PUBLIC_CACHE_TTL: std::time::Duration = std::time::Duration::from_secs(5);
