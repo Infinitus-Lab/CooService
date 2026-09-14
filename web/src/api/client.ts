@@ -83,8 +83,8 @@ function friendlyError(code: number, message: string): string {
 
 class Client {
   constructor(
-    /** API 基址；空串 = 同源（由 ApiSetupDialog 配置） */
-    private readonly baseApi: string,
+    /** API 基址；空串 = 同源（由 ApiSetupDialog 配置）。用 getter 读取，便于门里重新配置后立即生效 */
+    private readonly baseApi: () => string,
     private readonly adminKey: () => string,
     private readonly onUnauthorized: () => void,
     /** 地址不可达（fetch 失败 / 目标不是 CooService API）时回调，用于弹出设置框 */
@@ -126,7 +126,7 @@ class Client {
   ): Promise<T> {
     let response: Response;
     try {
-      response = await fetch(`${this.baseApi}${path}`, {
+      response = await fetch(`${this.baseApi()}${path}`, {
         method,
         headers: {
           ...(body === undefined ? {} : { 'Content-Type': 'application/json' }),
@@ -136,7 +136,7 @@ class Client {
       });
     } catch {
       this.onUnreachable();
-      throw new ApiError(0, `连不上服务（${this.baseApi || '同源'}）`);
+      throw new ApiError(0, `连不上服务（${this.baseApi() || '同源'}）`);
     }
     return this.finish<T>(response, path);
   }
@@ -145,14 +145,14 @@ class Client {
   private async raw<T>(method: string, path: string, body: Blob): Promise<T> {
     let response: Response;
     try {
-      response = await fetch(`${this.baseApi}${path}`, {
+      response = await fetch(`${this.baseApi()}${path}`, {
         method,
         headers: { 'X-Admin-Key': this.adminKey() },
         body,
       });
     } catch {
       this.onUnreachable();
-      throw new ApiError(0, `连不上服务（${this.baseApi || '同源'}）`);
+      throw new ApiError(0, `连不上服务（${this.baseApi() || '同源'}）`);
     }
     return this.finish<T>(response, path);
   }
@@ -317,7 +317,7 @@ class Client {
 }
 
 export const createClient = (
-  baseApi: string,
+  baseApi: () => string,
   adminKey: () => string,
   onUnauthorized: () => void,
   onUnreachable: () => void,

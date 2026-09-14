@@ -1,0 +1,8 @@
+@import "tailwindcss";
+@import "@nuxt/ui";
+
+/* 页面底色用 muted，卡片/面板保持 bg-default，保证明暗两种主题下都有层次 */
+body {
+  background-color: var(--ui-bg-muted);
+  color: var(--ui-text);
+}

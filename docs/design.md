@@ -34,4 +34,4 @@
 
 WebUI 界面，用于方便访问管理 API。需要单独编译成静态文件额外部署，或者在本地使用。API 地址与管理密钥在界面「设置」框由使用者输入（非环境变量注入）。
 
-技术栈：TypeScript + pnpm + React + daisyui
+技术栈：TypeScript + pnpm + Vue 3 + Nuxt UI（Tailwind v4）+ vue-router

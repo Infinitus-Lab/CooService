@@ -1,6 +1,6 @@
 # CooService WebUI
 
-技术栈：TypeScript + pnpm + React + daisyUI（Tailwind v4），构建成纯静态文件。
+技术栈：TypeScript + pnpm + Vue 3 + Nuxt UI 4（Tailwind v4）+ vue-router，构建成纯静态文件。
 
 ## 开发
 
@@ -16,11 +16,38 @@ pnpm dev                  # http://127.0.0.1:5173
 ## 构建
 
 ```bash
-pnpm build                # 产物在 dist/
+pnpm typecheck            # vue-tsc --noEmit
+pnpm build                # vue-tsc --noEmit && vite build，产物在 dist/
 pnpm preview
 ```
 
 纯静态产物，无构建期注入配置；API 地址与密钥全部运行时在界面配置。
+
+## 路由
+
+| 路径 | 页 |
+|---|---|
+| `/` | 重定向到 `/apps` |
+| `/apps` | 应用列表 |
+| `/apps/:id` | 应用详情（左侧栏：概览 / 发版通道 / 资源 / 公告） |
+| `/pools` | 资源池 |
+| `/resources` | 资源 |
+| `/announces` | 公告 |
+
+可直达、可刷新（Caddy 的 `try_files {path} /index.html` 兜底）；未知路径回落 `/apps`。
+
+## 目录
+
+```
+src/
+  api/            # types.ts（接口信封类型）与 client.ts（fetch 封装、错误中文映射）
+  components/     # HashChip / ConfirmDialog / ApiSetupDialog / ResourcePicker / ChannelDetail
+  composables/    # useAsync / useSession / useConfirm
+  lib/            # format.ts（哈希与字节格式化）、announce.ts（公告状态与有效期）
+  pages/          # 六个路由页
+  App.vue         # 顶栏导航 + RouterView + 密钥门
+  router.ts, main.ts
+```
 
 ## 页面
 
@@ -44,6 +71,11 @@ pnpm preview
 服务重启会换密钥，取当前值：`podman logs coo-router | grep 'X-Admin-Key'`（docker compose 同理）。
 
 资源池的 `secret` 永不回显，只能重设。
+
+## 主题
+
+Nuxt UI 4 默认主题：浅色为默认，深色由 `@nuxt/ui/vue-plugin` 内置的 color-mode 跟随系统
+`prefers-color-scheme`（在 `<html>` 上切 `.dark`），无需额外配置。
 
 ## 部署
 

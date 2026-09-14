@@ -1,9 +1,9 @@
 import { defineConfig } from 'vite';
-import react from '@vitejs/plugin-react';
-import tailwindcss from '@tailwindcss/vite';
+import vue from '@vitejs/plugin-vue';
+import ui from '@nuxt/ui/vite';
 
 export default defineConfig({
-  plugins: [react(), tailwindcss()],
+  plugins: [vue(), ui()],
   server: {
     host: '127.0.0.1',
     port: 5173,

@@ -166,11 +166,15 @@ coo-web（caddy + anubis 预留）/ coo-api（pgsql + router）两个 internal �
 
 ## 9. 前端（WebUI）
 
-- daisyUI 5 常规配色：`light` 为默认、`dark` 跟随系统 `prefers-color-scheme`；
-  无渐变；表单控件槽样走 `@utility` 覆盖（明暗主题下都保持可读）
+- Nuxt UI 4 默认主题：浅色为默认、深色由插件内置 color-mode 跟随系统
+  `prefers-color-scheme`（在 `<html>` 上切 `.dark`）；一律用语义色
+  （`bg-default`/`text-muted`/`border-default` 等），不写死调色板
+- 路由：vue-router（`/apps`、`/apps/:id`、`/pools`、`/resources`、`/announces`），
+  可直达可刷新，Caddy `try_files {path} /index.html` 兜底
 - 页面：顶层 应用/资源池/资源/公告 + App 详情左侧栏（概览/通道/资源/公告，
   按关联过滤）；密钥门 401 驱动；哈希一律 HashChip（可复制指纹）
-- 构建：`pnpm typecheck && pnpm build`（Tailwind v4 + daisyUI 5）
+- 构建：`pnpm build`（Vue 3 + @vitejs/plugin-vue + Tailwind v4 + Nuxt UI 4；先
+  `vue-tsc --noEmit` 再 `vite build`）
 
 ## 10. 已知取舍（上线前复核）
 

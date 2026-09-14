@@ -244,3 +244,7 @@ $RECYCLE.BIN/
 ### C# / dotnet ###
 **/bin/
 **/obj/
+
+# Nuxt UI / unplugin 生成的类型声明（每次 vite 启动自动重建）
+web/auto-imports.d.ts
+web/components.d.ts

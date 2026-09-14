@@ -1,3 +1,6 @@
 # pnpm 11 用 allowBuilds；esbuild 的安装脚本必须放行，否则 vite 起不来
 allowBuilds:
   esbuild: true
+  vue-demi: set this to true or false
+minimumReleaseAgeExclude:
+  - '@vitejs/plugin-vue@6.0.9'
