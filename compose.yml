@@ -11,13 +11,13 @@
 
 services:
   coo-pgsql:
-    image: docker.io/library/postgres:16-alpine
+    image: docker.io/library/postgres:18-alpine
     container_name: coo-pgsql
     env_file: ./environment
     networks:
       - coo-api
     volumes:
-      - pgdata:/var/lib/postgresql/data
+      - pgdata:/var/lib/postgresql
     healthcheck:
       # -U 与 environment 的 POSTGRES_USER 保持一致
       test: ["CMD-SHELL", "pg_isready -U cooservice -d cooservice"]
@@ -38,8 +38,6 @@ services:
     ports:
       - "127.0.0.1:8081:8081"
     volumes:
-      # 本地完整副本：入池与同步推池的唯一推送源。
-      # :U 改宿主目录属主为容器用户；:z 打共享 SELinux 标签（重建后可写）
       - ./data/resource:/data/resource:U,z
     restart: unless-stopped
 
@@ -50,8 +48,8 @@ services:
     environment:
       BIND: ":8082"
       TARGET: "http://caddy:80"
-      # 本地直连取源 IP 作客户端地址；挂 cloudflared 反代后删此项，由反代注入 X-Real-Ip
-      USE_REMOTE_ADDRESS: "true"
+      # 本地直连取源 IP 作客户端地址
+      # USE_REMOTE_ADDRESS: "true"
     healthcheck:
       test: ["CMD", "anubis", "--healthcheck"]
       interval: 5s
@@ -67,7 +65,6 @@ services:
     image: ghcr.io/infinitus-lab/cooservice-web:latest
     container_name: coo-caddy
     restart: unless-stopped
-    # 无对外端口：只被 coo-web 内网的 anubis 转发访问
     networks:
       - coo-web
 
